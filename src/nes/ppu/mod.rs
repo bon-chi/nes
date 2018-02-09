@@ -1,0 +1,2 @@
+struct Ppu {}
+struct Vram {}
