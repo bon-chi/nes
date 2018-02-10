@@ -1,3 +1,4 @@
+use std::mem;
 use std::ops::Range;
 use std::path::Path;
 use std::io::Read;
@@ -14,6 +15,7 @@ pub struct Cpu {
     pc: Register16,
     sp: Register8,
     p: Register8,
+    ram: Box<PrgRam>,
 }
 
 enum StatusFlag {
@@ -27,22 +29,27 @@ enum StatusFlag {
 }
 
 impl Cpu {
-    pub fn new() -> Cpu {
+    pub fn new(path: &Path) -> Cpu {
+        println!("hoge2");
+        // println!("{}", mem::size_of_val(&ram));
         Cpu {
             a: b'0',
             x: b'0',
             y: b'0',
-            pc: 0x0,
+            pc: 0x8000,
             sp: b'0',
             p: b'0',
+            ram: PrgRam::load(path),
         }
     }
 
-    fn run(&self) {
+    pub fn run(&self) {
         self.fetch();
         self.exec();
     }
-    fn fetch(&self) {}
+    fn fetch(&self) {
+        println!("{}", self.ram.0[self.pc as usize]);
+    }
     fn fetch_instruction_to_ir(&self) {}
     fn increment_pc(&self) {}
     fn decode_instruction(&self) {}
@@ -146,7 +153,7 @@ type Register16 = u16;
 pub struct PrgRam([u8; 0xFFFF]);
 
 impl PrgRam {
-    pub fn load(path: &Path) -> PrgRam {
+    pub fn load(path: &Path) -> Box<PrgRam> {
         let mut file = match File::open(path) {
             Ok(file) => file,
             Err(why) => panic!("{}: path is {:?}", why, path),
@@ -163,6 +170,25 @@ impl PrgRam {
         let chr_rom_banks_num = nes_buffer[5];
         let chr_rom_start = prg_rom_end + 1;
         let chr_rom_end = chr_rom_start + chr_rom_banks_num as u64 * 0x2000 - 1;
+
+        println!(
+            "{} - {} = {}: {} - {} = {}",
+            prg_rom_end,
+            prg_rom_start,
+            prg_rom_end - prg_rom_start,
+            chr_rom_end,
+            chr_rom_start,
+            chr_rom_end - chr_rom_start,
+        );
+        println!(
+            "{:0x} - {:0x} = {:0x}: {:0x} - {:0x} = {:0x}",
+            prg_rom_end,
+            prg_rom_start,
+            prg_rom_end - prg_rom_start,
+            chr_rom_end,
+            chr_rom_start,
+            chr_rom_end - chr_rom_start,
+        );
 
         let mut prg_rom: Vec<u8> = Vec::new();
         for i in prg_rom_start..(prg_rom_end + 1) {
@@ -222,7 +248,10 @@ impl PrgRam {
         // let mut pattern_table0: [u8; 0x1000];
         // let mut pattern_table1: [u8; 0x1000];
         // println!("{:?}", memory[0x8000]);
-        PrgRam(memory)
+        println!("{}", mem::size_of_val(&memory));
+        // println!("hoge1");
+        Box::new(PrgRam(memory))
+        // prg
     }
     fn fetch8(&self, address: u16) -> Register8 {
         self.0[address as usize]
