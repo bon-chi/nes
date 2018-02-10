@@ -43,15 +43,29 @@ impl Cpu {
         }
     }
 
-    pub fn run(&self) {
-        self.fetch();
-        self.exec();
+    pub fn run(&mut self) {
+        let (op_code, addressing_mode, operand0, operand1) = self.fetch();
+        self.exec(op_code, addressing_mode, operand0, operand1);
     }
-    fn fetch(&self) {
-        println!("{}", self.ram.0[self.pc as usize]);
+    fn fetch(&mut self) -> (OpCode, AddressingMode, Option<u8>, Option<u8>) {
+        let instruction = self.ram.0[self.pc as usize];
+        self.increment_pc();
+        println!("{:0x}", instruction);
+        let (op_code, addressing_mode, operand0, operand1): (OpCode,
+                                                             AddressingMode,
+                                                             Option<u8>,
+                                                             Option<u8>) = match instruction {
+            0x78 => (OpCode::SEI, AddressingMode::Implied, None, None),
+            _ => {
+                panic!("worng instruction: {}", instruction);
+            }
+        };
+        (op_code, addressing_mode, operand0, operand1)
     }
     fn fetch_instruction_to_ir(&self) {}
-    fn increment_pc(&self) {}
+    fn increment_pc(&mut self) {
+        self.pc = self.pc + 1;
+    }
     fn decode_instruction(&self) {}
     // exec instruction
     fn fetch_store_address(&self) {}
@@ -61,7 +75,23 @@ impl Cpu {
     fn check_condition(&self) {}
     fn fetch_jump_address(&self) {}
 
-    fn exec(&self) {}
+    fn exec(
+        &mut self,
+        op_code: OpCode,
+        addressing_mode: AddressingMode,
+        operand0: Option<u8>,
+        operand1: Option<u8>,
+    ) {
+        match op_code {
+            OpCode::SEI => self.sei(),
+            OpCode::LDX => {
+                match addressing_mode {
+                    AddressingMode::Immediate => {}
+                    _ => {}
+                }
+            }
+        }
+    }
     // exec instruction
     fn do_exec(&self) {}
     fn store_resutl(&self) {}
@@ -122,6 +152,10 @@ impl Cpu {
     }
     fn nmi(&self) {}
     fn irq(&self) {}
+
+    fn sei(&mut self) {
+        self.set_flag(StatusFlag::InterruptDisable);
+    }
 }
 
 struct MemoryMap {
@@ -268,4 +302,12 @@ impl PrgRam {
         self.0[addressess.0 as usize] = (data % 0x100) as u8;
         self.0[addressess.1 as usize] = (data >> 0b100) as u8;
     }
+}
+enum OpCode {
+    SEI,
+    LDX,
+}
+enum AddressingMode {
+    Implied,
+    Immediate,
 }
