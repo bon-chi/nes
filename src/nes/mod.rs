@@ -21,3 +21,13 @@ impl Nes {
         self.cpu.run();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn run_test() {
+        let mut nes = Nes::new("sample1.nes");
+        nes.run();
+    }
+}

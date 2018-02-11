@@ -1,3 +1,4 @@
+use std::fmt;
 use std::mem;
 use std::ops::Range;
 use std::path::Path;
@@ -30,7 +31,6 @@ enum StatusFlag {
 
 impl Cpu {
     pub fn new(path: &Path) -> Cpu {
-        println!("hoge2");
         // println!("{}", mem::size_of_val(&ram));
         Cpu {
             a: b'0',
@@ -44,22 +44,50 @@ impl Cpu {
     }
 
     pub fn run(&mut self) {
-        let (op_code, addressing_mode, operand0, operand1) = self.fetch();
-        self.exec(op_code, addressing_mode, operand0, operand1);
+        loop {
+            let (op_code, addressing_mode, operand0, operand1) = self.fetch();
+            // println!("{:0x}", self.pc);
+            self.exec(op_code, addressing_mode, operand0, operand1);
+        }
     }
+
     fn fetch(&mut self) -> (OpCode, AddressingMode, Option<u8>, Option<u8>) {
         let instruction = self.ram.0[self.pc as usize];
-        self.increment_pc();
-        println!("{:0x}", instruction);
+        // println!("{:0x}, {:0x}", self.pc, instruction);
         let (op_code, addressing_mode, operand0, operand1): (OpCode,
                                                              AddressingMode,
                                                              Option<u8>,
                                                              Option<u8>) = match instruction {
             0x78 => (OpCode::SEI, AddressingMode::Implied, None, None),
+            0x9a => (OpCode::TXS, AddressingMode::Implied, None, None),
+            0xa2 => {
+                self.increment_pc();
+                (
+                    OpCode::LDX,
+                    AddressingMode::Immediate,
+                    Some(self.ram.0[self.pc as usize]),
+                    None,
+                )
+            }
             _ => {
-                panic!("worng instruction: {}", instruction);
+                panic!(
+                    "worng instruction: {:0x} at: {:0x}, cpu_dump: {:?}",
+                    instruction,
+                    self.pc,
+                    self
+                );
             }
         };
+        #[cfg(feature="debug_log")]
+        println!(
+            "{:0x} {:?} {:?} {:?} {:?} ",
+            self.pc,
+            op_code,
+            addressing_mode,
+            operand0,
+            operand1
+        );
+        self.increment_pc();
         (op_code, addressing_mode, operand0, operand1)
     }
     fn fetch_instruction_to_ir(&self) {}
@@ -86,10 +114,11 @@ impl Cpu {
             OpCode::SEI => self.sei(),
             OpCode::LDX => {
                 match addressing_mode {
-                    AddressingMode::Immediate => {}
+                    AddressingMode::Immediate => self.x = operand0.unwrap(),
                     _ => {}
                 }
             }
+            _ => panic!("invalid exec op_code: {:?}", op_code),
         }
     }
     // exec instruction
@@ -105,25 +134,25 @@ impl Cpu {
     fn set_flag(&mut self, status_flag: StatusFlag) {
         match status_flag {
             StatusFlag::CarryFlag => {
-                self.pc = self.pc | 0b00000001;
+                self.p = self.p | 0b00000001;
             }
             StatusFlag::ZeroFlag => {
-                self.pc = self.pc | 0b00000010;
+                self.p = self.p | 0b00000010;
             }
             StatusFlag::InterruptDisable => {
-                self.pc = self.pc | 0b00000100;
+                self.p = self.p | 0b00000100;
             }
             StatusFlag::DecimalMode => {
-                self.pc = self.pc | 0b00001000;
+                self.p = self.p | 0b00001000;
             }
             StatusFlag::BreakCommand => {
-                self.pc = self.pc | 0b00010000;
+                self.p = self.p | 0b00010000;
             }
             StatusFlag::OverflowFlag => {
-                self.pc = self.pc | 0b01000000;
+                self.p = self.p | 0b01000000;
             }
             StatusFlag::NegativeFlag => {
-                self.pc = self.pc | 0b10000000;
+                self.p = self.p | 0b10000000;
             }
         }
     }
@@ -155,6 +184,21 @@ impl Cpu {
 
     fn sei(&mut self) {
         self.set_flag(StatusFlag::InterruptDisable);
+    }
+}
+
+impl fmt::Debug for Cpu {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "A:{:0x}, X:{:0x}, Y:{:0x}, PC:{:0x}, SP:{:0x}, P:{:0x}",
+            self.a,
+            self.x,
+            self.y,
+            self.pc,
+            self.sp,
+            self.p,
+        )
     }
 }
 
@@ -205,24 +249,24 @@ impl PrgRam {
         let chr_rom_start = prg_rom_end + 1;
         let chr_rom_end = chr_rom_start + chr_rom_banks_num as u64 * 0x2000 - 1;
 
-        println!(
-            "{} - {} = {}: {} - {} = {}",
-            prg_rom_end,
-            prg_rom_start,
-            prg_rom_end - prg_rom_start,
-            chr_rom_end,
-            chr_rom_start,
-            chr_rom_end - chr_rom_start,
-        );
-        println!(
-            "{:0x} - {:0x} = {:0x}: {:0x} - {:0x} = {:0x}",
-            prg_rom_end,
-            prg_rom_start,
-            prg_rom_end - prg_rom_start,
-            chr_rom_end,
-            chr_rom_start,
-            chr_rom_end - chr_rom_start,
-        );
+        // println!(
+        //     "{} - {} = {}: {} - {} = {}",
+        //     prg_rom_end,
+        //     prg_rom_start,
+        //     prg_rom_end - prg_rom_start,
+        //     chr_rom_end,
+        //     chr_rom_start,
+        //     chr_rom_end - chr_rom_start,
+        // );
+        // println!(
+        //     "{:0x} - {:0x} = {:0x}: {:0x} - {:0x} = {:0x}",
+        //     prg_rom_end,
+        //     prg_rom_start,
+        //     prg_rom_end - prg_rom_start,
+        //     chr_rom_end,
+        //     chr_rom_start,
+        //     chr_rom_end - chr_rom_start,
+        // );
 
         let mut prg_rom: Vec<u8> = Vec::new();
         for i in prg_rom_start..(prg_rom_end + 1) {
@@ -282,7 +326,6 @@ impl PrgRam {
         // let mut pattern_table0: [u8; 0x1000];
         // let mut pattern_table1: [u8; 0x1000];
         // println!("{:?}", memory[0x8000]);
-        println!("{}", mem::size_of_val(&memory));
         // println!("hoge1");
         Box::new(PrgRam(memory))
         // prg
@@ -303,11 +346,85 @@ impl PrgRam {
         self.0[addressess.1 as usize] = (data >> 0b100) as u8;
     }
 }
+
+#[derive(Debug)]
 enum OpCode {
+    ADC,
+    SBC,
+    AND,
+    ORA,
+    EOR,
+    ASL,
+    LSR,
+    ROL,
+    ROR,
+    BCC,
+    BCS,
+    BEQ,
+    BNE,
+    BVC,
+    BVS,
+    BPL,
+    BMI,
+    BIT,
+    JMP,
+    JSR,
+    RTS,
+    BRK,
+    RTI,
+    CMP,
+    CPX,
+    CPY,
+    INC,
+    DEC,
+    INX,
+    DEX,
+    INY,
+    DEY,
+    CLC,
+    SEC,
+    CLI,
     SEI,
+    CLD,
+    SED,
+    CLV,
+    LDA,
     LDX,
+    LDY,
+    STA,
+    STX,
+    STY,
+    TAX,
+    TXA,
+    TAY,
+    TYA,
+    TSX,
+    TXS,
+    PHA,
+    PLA,
+    PHP,
+    PLP,
+    NOP,
 }
+
+#[derive(Debug)]
 enum AddressingMode {
-    Implied,
+    Accumulator,
     Immediate,
+    Absolute,
+    ZeroPage,
+    IndexedZeroPage,
+    IndexedAbsolute,
+    Implied,
+    Relative,
+    IndexedIndirect,
+    IndirectIndexed,
+    AbsoluteIndirect,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn run_test() {}
 }

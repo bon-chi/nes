@@ -3,4 +3,9 @@ name = "nes"
 version = "0.1.0"
 authors = ["Koji Ota"]
 
+[features]
+debug_log = []
+default = ["debug_log"]
+
 [dependencies]
+
