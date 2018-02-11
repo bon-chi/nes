@@ -53,6 +53,7 @@ impl Cpu {
         let instruction = self.ram.0[self.pc as usize];
         let (op_code, addressing_mode, register): (OpCode, AddressingMode, Option<IndexRegister>) = match instruction {
 
+            0x20 => (OpCode::JSR, AddressingMode::Absolute, None),
             0x21 => (OpCode::AND, AddressingMode::IndexedIndirect, None),
             0x78 => (OpCode::SEI, AddressingMode::Implied, None),
             0x88 => (OpCode::DEY, AddressingMode::Implied, None),
@@ -108,6 +109,7 @@ impl Cpu {
                         let address0 = self.ram_value();
                         self.increment_pc();
                         let address1 = self.ram_value();
+                        self.increment_pc();
                         let address = PrgRam::concat_addresses(address1, address0) + self.x as u16;
                         Some(Operand::Index(address))
                     }
@@ -115,9 +117,9 @@ impl Cpu {
                         let address0 = self.ram_value();
                         self.increment_pc();
                         let address1 = self.ram_value();
+                        self.increment_pc();
                         let address = PrgRam::concat_addresses(address1, address0) as u16;
                         Some(Operand::Index(address))
-
                     }
                     _ => {
                         panic!(
@@ -130,21 +132,11 @@ impl Cpu {
             }
             AddressingMode::Relative => {
                 let index = match self.ram_value() as i8 {
-                    i @ -128...0 => self.pc + 1 - (-i.abs() as u16),
+                    i @ -128...0 => self.pc + 1 - ((-i).abs() as u16),
                     i @ 0...127 => self.pc + 1 + (i as u16),
                     _ => panic!("invalid"),
                 };
                 Some(Operand::Index(index))
-                // if self.ram_value() as i16 < 0 {
-                //
-                // } else {
-                // Some(Operand::Index(
-                //     ((self.ram_value() ) + self.pc + 1) as u16,
-                // ))
-                // }
-                // Some(Operand::Index(
-                //     ((self.ram_value() as i16) + self.pc + 1) as u16,
-                // ))
             }
             AddressingMode::IndexedIndirect => {
                 match register {
@@ -235,10 +227,23 @@ impl Cpu {
                     let dest = self.ram.0[(self.pc + 1) as usize] as u16;
                     match operand {
                         Some(Operand::Index(idx)) => self.pc = idx,
-                        _ => panic!("invalid operand: {:?}", operand),
+                        _ => panic!("BNE invalid operand: {:?}", operand),
                     }
                 } else {
                     self.pc = self.pc + 1;
+                }
+            }
+            OpCode::JSR => {
+                match operand {
+                    Some(Operand::Index(index)) => {
+                        self.pc -= 1;
+                        let (high, low) = PrgRam::split_address(self.pc);
+                        self.push_stack(high);
+                        self.push_stack(low);
+                        println!("jump:{:0x}", index);
+                        self.pc = index;
+                    }
+                    _ => panic!("JSR invalid operand: {:?}", operand),
                 }
             }
             OpCode::AND => {
@@ -322,6 +327,17 @@ impl Cpu {
 
     fn sei(&mut self) {
         self.set_flag(StatusFlag::InterruptDisable);
+    }
+    fn push_stack(&mut self, value: u8) {
+        let address = PrgRam::concat_addresses(0x01 as u8, self.sp);
+        self.set_ram_value(value, address);
+        self.sp -= 1;
+    }
+
+    fn pop_stack(&mut self) -> u8 {
+        self.sp += 1;
+        let address = PrgRam::concat_addresses(0x01 as u8, self.sp);
+        self.get_ram_value(address)
     }
 }
 
@@ -478,6 +494,9 @@ impl PrgRam {
 
     pub fn concat_addresses(address0: u8, address1: u8) -> u16 {
         ((address0 as u16) << 0b1000) + address1 as u16
+    }
+    fn split_address(address: u16) -> (u8, u8) {
+        ((address >> 0b1000) as u8, (address % 0x100) as u8)
     }
     fn set8(&mut self, address: u16, data: u8) {
         self.0[address as usize] = data;
