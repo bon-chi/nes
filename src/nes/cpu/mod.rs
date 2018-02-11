@@ -55,6 +55,7 @@ impl Cpu {
 
             0x20 => (OpCode::JSR, AddressingMode::Absolute, None),
             0x21 => (OpCode::AND, AddressingMode::IndexedIndirect, None),
+            0x4c => (OpCode::JMP, AddressingMode::Absolute, None),
             0x78 => (OpCode::SEI, AddressingMode::Implied, None),
             0x88 => (OpCode::DEY, AddressingMode::Implied, None),
             0x8d => (OpCode::STA, AddressingMode::Absolute, None),
@@ -231,6 +232,14 @@ impl Cpu {
                     }
                 } else {
                     self.pc = self.pc + 1;
+                }
+            }
+            OpCode::JMP => {
+                match operand {
+                    Some(Operand::Index(index)) => {
+                        self.pc = index;
+                    }
+                    _ => panic!("JMP invalid operand: {:?}", operand),
                 }
             }
             OpCode::JSR => {
