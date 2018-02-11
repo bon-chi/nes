@@ -44,79 +44,33 @@ impl Cpu {
 
     pub fn run(&mut self) {
         loop {
-            let (op_code, addressing_mode, register, operand0, operand1) = self.fetch();
-            // println!("{:0x}", self.pc);
-            self.exec(op_code, addressing_mode, register, operand0, operand1);
+            let (op_code, addressing_mode, register) = self.fetch();
+            let operand = self.get_operand(addressing_mode, register);
+            self.exec(op_code, operand);
         }
     }
-
-    fn fetch(&mut self) -> (OpCode, AddressingMode, Option<IndexRegister>, Option<u8>, Option<u8>) {
+    fn fetch(&mut self) -> (OpCode, AddressingMode, Option<IndexRegister>) {
         let instruction = self.ram.0[self.pc as usize];
-        // println!("{:0x}, {:0x}", self.pc, instruction);
-        let (op_code, addressing_mode, register, operand0, operand1): (OpCode,
-                                                                       AddressingMode,
-                                                                       Option<IndexRegister>,
-                                                                       Option<u8>,
-                                                                       Option<u8>) = match instruction {
-            0x78 => (OpCode::SEI, AddressingMode::Implied, None, None, None),
-            0x8d => {
-                self.increment_pc();
-                let operand0 = self.ram.0[self.pc as usize];
-                self.increment_pc();
-                let operand1 = self.ram.0[self.pc as usize];
-                (
-                    OpCode::STA,
-                    AddressingMode::Absolute,
-                    None,
-                    Some(operand0),
-                    Some(operand1),
-                )
-            }
-            0x9a => (OpCode::TXS, AddressingMode::Implied, None, None, None),
-            0xa0 => {
-                self.increment_pc();
-                (
-                    OpCode::LDY,
-                    AddressingMode::Immediate,
-                    None,
-                    Some(self.ram.0[self.pc as usize]),
-                    None,
-                )
-            }
-            0xa2 => {
-                self.increment_pc();
-                (
-                    OpCode::LDX,
-                    AddressingMode::Immediate,
-                    None,
-                    Some(self.ram.0[self.pc as usize]),
-                    None,
-                )
-            }
-            0xa9 => {
-                self.increment_pc();
-                (
-                    OpCode::LDA,
-                    AddressingMode::Immediate,
-                    None,
-                    Some(self.ram.0[self.pc as usize]),
-                    None,
-                )
-            }
+        let (op_code, addressing_mode, register): (OpCode, AddressingMode, Option<IndexRegister>) = match instruction {
+
+            0x21 => (OpCode::AND, AddressingMode::IndexedIndirect, None),
+            0x78 => (OpCode::SEI, AddressingMode::Implied, None),
+            0x88 => (OpCode::DEY, AddressingMode::Implied, None),
+            0x8d => (OpCode::STA, AddressingMode::Absolute, None),
+            0x9a => (OpCode::TXS, AddressingMode::Implied, None),
+            0xa0 => (OpCode::LDY, AddressingMode::Immediate, None),
+            0xa2 => (OpCode::LDX, AddressingMode::Immediate, None),
+            0xa9 => (OpCode::LDA, AddressingMode::Immediate, None),
             0xbd => {
-                self.increment_pc();
-                let operand0 = self.ram.0[self.pc as usize];
-                self.increment_pc();
-                let operand1 = self.ram.0[self.pc as usize];
                 (
                     OpCode::LDA,
                     AddressingMode::Absolute,
                     Some(IndexRegister::X),
-                    Some(operand0),
-                    Some(operand1),
                 )
-
             }
+            0xd0 => (OpCode::BNE, AddressingMode::Relative, None),
+            0xe8 => (OpCode::INX, AddressingMode::Implied, None),
+            0x78 => (OpCode::SEI, AddressingMode::Implied, None),
             _ => {
                 panic!(
                     "unknown instruction: {:0x} at: {:0x}, cpu_dump: {:?}",
@@ -128,20 +82,214 @@ impl Cpu {
         };
         #[cfg(feature="debug_log")]
         println!(
-            "{:0x} {:?} {:?} {:?} {:?}{:?} ",
+            "{:0x} {:?} {:?} {:?} ",
             self.pc,
             op_code,
             addressing_mode,
             register,
-            operand0,
-            operand1
         );
         #[cfg(not(test))]
         println!("debughoge");
 
         self.increment_pc();
-        (op_code, addressing_mode, register, operand0, operand1)
+        (op_code, addressing_mode, register)
     }
+    fn get_operand(&mut self, addressing_mode: AddressingMode, register: Option<IndexRegister>) -> Option<Operand> {
+        let operand: Option<Operand> = match addressing_mode {
+            AddressingMode::Implied => None,
+            AddressingMode::Immediate => {
+                let operand = self.ram_value();
+                self.increment_pc();
+                Some(Operand::Value(operand))
+            }
+            AddressingMode::Absolute => {
+                match register {
+                    Some(IndexRegister::X) => {
+                        let address0 = self.ram_value();
+                        self.increment_pc();
+                        let address1 = self.ram_value();
+                        let address = PrgRam::concat_addresses(address1, address0) + self.x as u16;
+                        Some(Operand::Index(address))
+                    }
+                    None => {
+                        let address0 = self.ram_value();
+                        self.increment_pc();
+                        let address1 = self.ram_value();
+                        let address = PrgRam::concat_addresses(address1, address0) as u16;
+                        Some(Operand::Index(address))
+
+                    }
+                    _ => {
+                        panic!(
+                            "invalid register: {:?}, addressing_mode is {:?}",
+                            register,
+                            addressing_mode
+                        );
+                    }
+                }
+            }
+            AddressingMode::Relative => {
+                let index = match self.ram_value() as i8 {
+                    i @ -128...0 => self.pc + 1 - (-i.abs() as u16),
+                    i @ 0...127 => self.pc + 1 + (i as u16),
+                    _ => panic!("invalid"),
+                };
+                Some(Operand::Index(index))
+                // if self.ram_value() as i16 < 0 {
+                //
+                // } else {
+                // Some(Operand::Index(
+                //     ((self.ram_value() ) + self.pc + 1) as u16,
+                // ))
+                // }
+                // Some(Operand::Index(
+                //     ((self.ram_value() as i16) + self.pc + 1) as u16,
+                // ))
+            }
+            AddressingMode::IndexedIndirect => {
+                match register {
+                    Some(IndexRegister::X) => {
+                        let bb = PrgRam::concat_addresses(0x00 as u8, self.ram_value()) + (self.x as u16);
+                        let xx: u8 = self.get_ram_value(bb);
+                        let yy: u8 = self.get_ram_value(bb + 1);
+                        self.increment_pc();
+                        Some(Operand::Index(PrgRam::concat_addresses(yy, xx)))
+                    }
+                    _ => {
+                        panic!(
+                            "invalid register: {:?}, addressing_mode is {:?}",
+                            register,
+                            addressing_mode
+                        );
+
+                    }
+                }
+            }
+            _ => panic!("invalid AddressingMode: {:?}", addressing_mode),
+        };
+        operand
+    }
+
+    fn ram_value(&self) -> u8 {
+        self.ram.0[self.pc as usize]
+    }
+    fn get_ram_value(&self, idx: u16) -> u8 {
+        self.ram.0[idx as usize]
+    }
+    fn set_ram_value(&mut self, value: u8, idx: u16) {
+        self.ram.set8(idx, value);
+    }
+
+    // fn fetch(&mut self) -> (OpCode, AddressingMode, Option<IndexRegister>, Option<u8>, Option<u8>) {
+    //     let instruction = self.ram.0[self.pc as usize];
+    //     // println!("{:0x}, {:0x}", self.pc, instruction);
+    //     let (op_code, addressing_mode, register, operand0, operand1): (OpCode,
+    //                                                                    AddressingMode,
+    //                                                                    Option<IndexRegister>,
+    //                                                                    Option<u8>,
+    //                                                                    Option<u8>) = match instruction {
+    //         0x21 => {
+    //             self.increment_pc();
+    //             let address = PrgRam::concat_addresses(0x00 as u8, self.pc) + (self.x as u16);
+    //             let xx: u8 = self.ram.0[address as usize];
+    //             let yy: u8 = self.ram.0[(address + 1) as usize];
+    //             // let operand0 = self.ram.0[PrgRam::concat_addresses(yy, xx)];
+    //             (
+    //                 OpCode::AND,
+    //                 AddressingMode::IndexedIndirect,
+    //                 Some(IndexRegister::X),
+    //                 Some(yy),
+    //                 Some(xx),
+    //             )
+    //
+    //         }
+    //         0x78 => (OpCode::SEI, AddressingMode::Implied, None, None, None),
+    //         0x88 => (OpCode::DEY, AddressingMode::Implied, None, None, None),
+    //         0x8d => {
+    //             self.increment_pc();
+    //             let operand0 = self.ram.0[self.pc as usize];
+    //             self.increment_pc();
+    //             let operand1 = self.ram.0[self.pc as usize];
+    //             (
+    //                 OpCode::STA,
+    //                 AddressingMode::Absolute,
+    //                 None,
+    //                 Some(operand0),
+    //                 Some(operand1),
+    //             )
+    //         }
+    //         0x9a => (OpCode::TXS, AddressingMode::Implied, None, None, None),
+    //         0xa0 => {
+    //             self.increment_pc();
+    //             (
+    //                 OpCode::LDY,
+    //                 AddressingMode::Immediate,
+    //                 None,
+    //                 Some(self.ram.0[self.pc as usize]),
+    //                 None,
+    //             )
+    //         }
+    //         0xa2 => {
+    //             self.increment_pc();
+    //             (
+    //                 OpCode::LDX,
+    //                 AddressingMode::Immediate,
+    //                 None,
+    //                 Some(self.ram.0[self.pc as usize]),
+    //                 None,
+    //             )
+    //         }
+    //         0xa9 => {
+    //             self.increment_pc();
+    //             (
+    //                 OpCode::LDA,
+    //                 AddressingMode::Immediate,
+    //                 None,
+    //                 Some(self.ram.0[self.pc as usize]),
+    //                 None,
+    //             )
+    //         }
+    //         0xbd => {
+    //             self.increment_pc();
+    //             let operand0 = self.ram.0[self.pc as usize];
+    //             self.increment_pc();
+    //             let operand1 = self.ram.0[self.pc as usize];
+    //             (
+    //                 OpCode::LDA,
+    //                 AddressingMode::Absolute,
+    //                 Some(IndexRegister::X),
+    //                 Some(operand0),
+    //                 Some(operand1),
+    //             )
+    //
+    //         }
+    //         0xd0 => (OpCode::BNE, AddressingMode::Relative, None, None, None),
+    //         0xe8 => (OpCode::INX, AddressingMode::Implied, None, None, None),
+    //         _ => {
+    //             panic!(
+    //                 "unknown instruction: {:0x} at: {:0x}, cpu_dump: {:?}",
+    //                 instruction,
+    //                 self.pc,
+    //                 self
+    //             );
+    //         }
+    //     };
+    //     #[cfg(feature="debug_log")]
+    //     println!(
+    //         "{:0x} {:?} {:?} {:?} {:?}{:?} ",
+    //         self.pc,
+    //         op_code,
+    //         addressing_mode,
+    //         register,
+    //         operand0,
+    //         operand1
+    //     );
+    //     #[cfg(not(test))]
+    //     println!("debughoge");
+    //
+    //     self.increment_pc();
+    //     (op_code, addressing_mode, register, operand0, operand1)
+    // }
     fn fetch_instruction_to_ir(&self) {}
     fn increment_pc(&mut self) {
         self.pc = self.pc + 1;
@@ -155,106 +303,247 @@ impl Cpu {
     fn check_condition(&self) {}
     fn fetch_jump_address(&self) {}
 
-    fn exec(
-        &mut self,
-        op_code: OpCode,
-        addressing_mode: AddressingMode,
-        register: Option<IndexRegister>,
-        operand0: Option<u8>,
-        operand1: Option<u8>,
-    ) {
+    fn exec(&mut self, op_code: OpCode, operand: Option<Operand>) {
         match op_code {
             OpCode::SEI => self.sei(),
             OpCode::LDA => {
-                match addressing_mode {
-                    AddressingMode::Immediate => self.a = operand0.unwrap(),
-                    AddressingMode::Absolute => {
-                        match register {
-                            Some(IndexRegister::X) => {
-                                let address = PrgRam::concat_addresses(operand1.unwrap(), operand0.unwrap()) + self.x as u16;
-                                self.a = self.ram.fetch8(address);
-
-                            }
-                            _ => {
-                                panic!(
-                                    "invalid register: {:?}, op_code is {:?} and addressing_mode is {:?}",
-                                    register,
-                                    op_code,
-                                    addressing_mode
-                                );
-                            }
-                        }
-                    }
-                    _ => {
-                        panic!(
-                            "invalid addressing_mode: {:?}, op_code is {:?}",
-                            op_code,
-                            addressing_mode
-                        )
-                    }
+                match operand {
+                    Some(Operand::Index(idx)) => self.a = self.get_ram_value(idx),
+                    Some(Operand::Value(value)) => self.a = value,
+                    _ => panic!("invalid operand: {:?}", operand),
                 }
             }
             OpCode::LDX => {
-                match addressing_mode {
-                    AddressingMode::Immediate => self.x = operand0.unwrap(),
-                    _ => {
-                        panic!(
-                            "invalid addressing_mode: {:?}, op_code is {:?}",
-                            op_code,
-                            addressing_mode
-                        )
-                    }
+                match operand {
+                    Some(Operand::Index(idx)) => self.x = self.get_ram_value(idx),
+                    Some(Operand::Value(value)) => self.x = value,
+                    _ => panic!("invalid operand: {:?}", operand),
                 }
             }
             OpCode::LDY => {
-                match addressing_mode {
-                    AddressingMode::Immediate => self.y = operand0.unwrap(),
-                    _ => {
-                        panic!(
-                            "invalid addressing_mode: {:?}, op_code is {:?}",
-                            op_code,
-                            addressing_mode
-                        )
-                    }
+                match operand {
+                    Some(Operand::Index(idx)) => self.y = self.get_ram_value(idx),
+                    Some(Operand::Value(value)) => self.y = value,
+                    _ => panic!("invalid operand: {:?}", operand),
                 }
             }
             OpCode::TXS => self.x = self.sp,
             OpCode::STA => {
-                match addressing_mode {
-                    AddressingMode::Absolute => {
-                        match register {
-                            Some(IndexRegister::X) => panic!("hoge"),
-                            None => {
-                                self.ram.set8(
-                                    PrgRam::concat_addresses(operand1.unwrap(), operand0.unwrap()),
-                                    self.a,
-                                );
-
-                            }
-                            _ => {
-                                panic!(
-                                    "invalid register: {:?}, op_code is {:?} and addressing_mode is {:?}",
-                                    register,
-                                    op_code,
-                                    addressing_mode
-                                );
-
-                            }
-                        }
+                match operand {
+                    Some(Operand::Index(idx)) => {
+                        let a = self.a;
+                        self.set_ram_value(a, idx)
                     }
-                    _ => {
-                        panic!(
-                            "invalid addressing_mode: {:?}, op_code is {:?}",
-                            op_code,
-                            addressing_mode
-                        )
-                    }
+                    _ => panic!("invalid operand: {:?}", operand),
 
                 }
             }
-            _ => panic!("invalid exec op_code: {:?}", op_code),
+            OpCode::INX => self.x += 1,
+            OpCode::DEY => self.y -= 1,
+            OpCode::BNE => {
+                if self.get_zero_flag() {
+                    self.increment_pc();
+                    let dest = self.ram.0[(self.pc + 1) as usize] as u16;
+                    match operand {
+                        Some(Operand::Index(idx)) => self.pc = idx,
+                        _ => panic!("invalid operand: {:?}", operand),
+                    }
+                } else {
+                    self.pc = self.pc + 1;
+                }
+            }
+            OpCode::AND => {
+                match operand {
+                    Some(Operand::Index(idx)) => self.a = self.ram_value() & self.a,
+                    _ => panic!("invalid operand: {:?}", operand),
+                }
+            }
+            _ => {
+                panic!(
+                    "invalid exec op_code: {:?}, operand is {:?}",
+                    op_code,
+                    operand
+                )
+            }
         }
     }
+    // fn exec(
+    //     &mut self,
+    //     op_code: OpCode,
+    //     addressing_mode: AddressingMode,
+    //     register: Option<IndexRegister>,
+    //     operand0: Option<u8>,
+    //     operand1: Option<u8>,
+    // ) {
+    //     match op_code {
+    //         OpCode::SEI => self.sei(),
+    //         OpCode::LDA => {
+    //             match addressing_mode {
+    //                 AddressingMode::Immediate => self.a = operand0.unwrap(),
+    //                 AddressingMode::Absolute => {
+    //                     match register {
+    //                         Some(IndexRegister::X) => {
+    //                             let address = PrgRam::concat_addresses(operand1.unwrap(), operand0.unwrap()) + self.x as u16;
+    //                             self.a = self.ram.fetch8(address);
+    //
+    //                         }
+    //                         _ => {
+    //                             panic!(
+    //                                 "invalid register: {:?}, op_code is {:?} and addressing_mode is {:?}",
+    //                                 register,
+    //                                 op_code,
+    //                                 addressing_mode
+    //                             );
+    //                         }
+    //                     }
+    //                 }
+    //                 _ => {
+    //                     panic!(
+    //                         "invalid addressing_mode: {:?}, op_code is {:?}",
+    //                         op_code,
+    //                         addressing_mode
+    //                     )
+    //                 }
+    //             }
+    //         }
+    //         OpCode::LDX => {
+    //             match addressing_mode {
+    //                 AddressingMode::Immediate => self.x = operand0.unwrap(),
+    //                 _ => {
+    //                     panic!(
+    //                         "invalid addressing_mode: {:?}, op_code is {:?}",
+    //                         op_code,
+    //                         addressing_mode
+    //                     )
+    //                 }
+    //             }
+    //         }
+    //         OpCode::LDY => {
+    //             match addressing_mode {
+    //                 AddressingMode::Immediate => self.y = operand0.unwrap(),
+    //                 _ => {
+    //                     panic!(
+    //                         "invalid addressing_mode: {:?}, op_code is {:?}",
+    //                         op_code,
+    //                         addressing_mode
+    //                     )
+    //                 }
+    //             }
+    //         }
+    //         OpCode::TXS => self.x = self.sp,
+    //         OpCode::STA => {
+    //             match addressing_mode {
+    //                 AddressingMode::Absolute => {
+    //                     match register {
+    //                         Some(IndexRegister::X) => panic!("hoge"),
+    //                         None => {
+    //                             self.ram.set8(
+    //                                 PrgRam::concat_addresses(operand1.unwrap(), operand0.unwrap()),
+    //                                 self.a,
+    //                             );
+    //
+    //                         }
+    //                         _ => {
+    //                             panic!(
+    //                                 "invalid register: {:?}, op_code is {:?} and addressing_mode is {:?}",
+    //                                 register,
+    //                                 op_code,
+    //                                 addressing_mode
+    //                             );
+    //
+    //                         }
+    //                     }
+    //                 }
+    //                 _ => {
+    //                     panic!(
+    //                         "invalid addressing_mode: {:?}, op_code is {:?}",
+    //                         op_code,
+    //                         addressing_mode
+    //                     )
+    //                 }
+    //
+    //             }
+    //         }
+    //         OpCode::INX => {
+    //             match addressing_mode {
+    //                 AddressingMode::Implied => {
+    //                     self.x += 1;
+    //                 }
+    //                 _ => {
+    //                     panic!(
+    //                         "invalid addressing_mode: {:?}, op_code is {:?}",
+    //                         op_code,
+    //                         addressing_mode
+    //                     )
+    //                 }
+    //             }
+    //         }
+    //         OpCode::DEY => {
+    //             match addressing_mode {
+    //                 AddressingMode::Implied => {
+    //                     self.y -= 1;
+    //                 }
+    //                 _ => {
+    //                     panic!(
+    //                         "invalid addressing_mode: {:?}, op_code is {:?}",
+    //                         op_code,
+    //                         addressing_mode
+    //                     )
+    //                 }
+    //             }
+    //         }
+    //         OpCode::BNE => {
+    //             match addressing_mode {
+    //                 AddressingMode::Relative => {
+    //                     if self.get_zero_flag() {
+    //                         self.increment_pc();
+    //                         let dest = self.ram.0[(self.pc + 1) as usize] as u16;
+    //                         self.pc = self.pc + dest;
+    //                     }
+    //                     self.increment_pc();
+    //                     self.increment_pc();
+    //                 }
+    //                 _ => {
+    //                     panic!(
+    //                         "invalid addressing_mode: {:?}, op_code is {:?}",
+    //                         op_code,
+    //                         addressing_mode
+    //                     )
+    //                 }
+    //             }
+    //         }
+    //         OpCode::AND => {
+    //             match addressing_mode {
+    //                 AddressingMode::IndexedIndirect => {
+    //                     match register {
+    //                         Some(IndexRegister::X) => {
+    //                             let address = PrgRam::concat_addresses(operand0.unwrap(), operand1.unwrap());
+    //                             self.ram.0[address as usize] = self.ram.0[address as usize] & self.a;
+    //                         }
+    //                         _ => {
+    //                             panic!(
+    //                                 "invalid register: {:?}, op_code is {:?} and addressing_mode is {:?}",
+    //                                 register,
+    //                                 op_code,
+    //                                 addressing_mode
+    //                             );
+    //
+    //                         }
+    //                     }
+    //                 }
+    //                 _ => {
+    //                     panic!(
+    //                         "invalid addressing_mode: {:?}, op_code is {:?}",
+    //                         op_code,
+    //                         addressing_mode
+    //                     )
+    //                 }
+    //
+    //             }
+    //         }
+    //         _ => panic!("invalid exec op_code: {:?}", op_code),
+    //     }
+    // }
     // exec instruction
     fn do_exec(&self) {}
     fn store_resutl(&self) {}
@@ -265,6 +554,9 @@ impl Cpu {
         self.pc = value;
     }
 
+    fn get_zero_flag(&self) -> bool {
+        (self.p & 0b00000010) == 0b00000010
+    }
     fn set_flag(&mut self, status_flag: StatusFlag) {
         match status_flag {
             StatusFlag::CarryFlag => {
@@ -563,4 +855,9 @@ enum AddressingMode {
 enum IndexRegister {
     X,
     Y,
+}
+#[derive(Debug)]
+enum Operand {
+    Value(u8),
+    Index(u16),
 }
