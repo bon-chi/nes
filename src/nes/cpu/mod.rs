@@ -1,5 +1,4 @@
 use std::fmt;
-use std::mem;
 use std::ops::Range;
 use std::path::Path;
 use std::io::Read;
@@ -45,33 +44,82 @@ impl Cpu {
 
     pub fn run(&mut self) {
         loop {
-            let (op_code, addressing_mode, operand0, operand1) = self.fetch();
+            let (op_code, addressing_mode, register, operand0, operand1) = self.fetch();
             // println!("{:0x}", self.pc);
-            self.exec(op_code, addressing_mode, operand0, operand1);
+            self.exec(op_code, addressing_mode, register, operand0, operand1);
         }
     }
 
-    fn fetch(&mut self) -> (OpCode, AddressingMode, Option<u8>, Option<u8>) {
+    fn fetch(&mut self) -> (OpCode, AddressingMode, Option<IndexRegister>, Option<u8>, Option<u8>) {
         let instruction = self.ram.0[self.pc as usize];
         // println!("{:0x}, {:0x}", self.pc, instruction);
-        let (op_code, addressing_mode, operand0, operand1): (OpCode,
-                                                             AddressingMode,
-                                                             Option<u8>,
-                                                             Option<u8>) = match instruction {
-            0x78 => (OpCode::SEI, AddressingMode::Implied, None, None),
-            0x9a => (OpCode::TXS, AddressingMode::Implied, None, None),
+        let (op_code, addressing_mode, register, operand0, operand1): (OpCode,
+                                                                       AddressingMode,
+                                                                       Option<IndexRegister>,
+                                                                       Option<u8>,
+                                                                       Option<u8>) = match instruction {
+            0x78 => (OpCode::SEI, AddressingMode::Implied, None, None, None),
+            0x8d => {
+                self.increment_pc();
+                let operand0 = self.ram.0[self.pc as usize];
+                self.increment_pc();
+                let operand1 = self.ram.0[self.pc as usize];
+                (
+                    OpCode::STA,
+                    AddressingMode::Absolute,
+                    None,
+                    Some(operand0),
+                    Some(operand1),
+                )
+            }
+            0x9a => (OpCode::TXS, AddressingMode::Implied, None, None, None),
+            0xa0 => {
+                self.increment_pc();
+                (
+                    OpCode::LDY,
+                    AddressingMode::Immediate,
+                    None,
+                    Some(self.ram.0[self.pc as usize]),
+                    None,
+                )
+            }
             0xa2 => {
                 self.increment_pc();
                 (
                     OpCode::LDX,
                     AddressingMode::Immediate,
+                    None,
                     Some(self.ram.0[self.pc as usize]),
                     None,
                 )
             }
+            0xa9 => {
+                self.increment_pc();
+                (
+                    OpCode::LDA,
+                    AddressingMode::Immediate,
+                    None,
+                    Some(self.ram.0[self.pc as usize]),
+                    None,
+                )
+            }
+            0xbd => {
+                self.increment_pc();
+                let operand0 = self.ram.0[self.pc as usize];
+                self.increment_pc();
+                let operand1 = self.ram.0[self.pc as usize];
+                (
+                    OpCode::LDA,
+                    AddressingMode::Absolute,
+                    Some(IndexRegister::X),
+                    Some(operand0),
+                    Some(operand1),
+                )
+
+            }
             _ => {
                 panic!(
-                    "worng instruction: {:0x} at: {:0x}, cpu_dump: {:?}",
+                    "unknown instruction: {:0x} at: {:0x}, cpu_dump: {:?}",
                     instruction,
                     self.pc,
                     self
@@ -80,15 +128,19 @@ impl Cpu {
         };
         #[cfg(feature="debug_log")]
         println!(
-            "{:0x} {:?} {:?} {:?} {:?} ",
+            "{:0x} {:?} {:?} {:?} {:?}{:?} ",
             self.pc,
             op_code,
             addressing_mode,
+            register,
             operand0,
             operand1
         );
+        #[cfg(not(test))]
+        println!("debughoge");
+
         self.increment_pc();
-        (op_code, addressing_mode, operand0, operand1)
+        (op_code, addressing_mode, register, operand0, operand1)
     }
     fn fetch_instruction_to_ir(&self) {}
     fn increment_pc(&mut self) {
@@ -107,15 +159,97 @@ impl Cpu {
         &mut self,
         op_code: OpCode,
         addressing_mode: AddressingMode,
+        register: Option<IndexRegister>,
         operand0: Option<u8>,
         operand1: Option<u8>,
     ) {
         match op_code {
             OpCode::SEI => self.sei(),
+            OpCode::LDA => {
+                match addressing_mode {
+                    AddressingMode::Immediate => self.a = operand0.unwrap(),
+                    AddressingMode::Absolute => {
+                        match register {
+                            Some(IndexRegister::X) => {
+                                let address = PrgRam::concat_addresses(operand1.unwrap(), operand0.unwrap()) + self.x as u16;
+                                self.a = self.ram.fetch8(address);
+
+                            }
+                            _ => {
+                                panic!(
+                                    "invalid register: {:?}, op_code is {:?} and addressing_mode is {:?}",
+                                    register,
+                                    op_code,
+                                    addressing_mode
+                                );
+                            }
+                        }
+                    }
+                    _ => {
+                        panic!(
+                            "invalid addressing_mode: {:?}, op_code is {:?}",
+                            op_code,
+                            addressing_mode
+                        )
+                    }
+                }
+            }
             OpCode::LDX => {
                 match addressing_mode {
                     AddressingMode::Immediate => self.x = operand0.unwrap(),
-                    _ => {}
+                    _ => {
+                        panic!(
+                            "invalid addressing_mode: {:?}, op_code is {:?}",
+                            op_code,
+                            addressing_mode
+                        )
+                    }
+                }
+            }
+            OpCode::LDY => {
+                match addressing_mode {
+                    AddressingMode::Immediate => self.y = operand0.unwrap(),
+                    _ => {
+                        panic!(
+                            "invalid addressing_mode: {:?}, op_code is {:?}",
+                            op_code,
+                            addressing_mode
+                        )
+                    }
+                }
+            }
+            OpCode::TXS => self.x = self.sp,
+            OpCode::STA => {
+                match addressing_mode {
+                    AddressingMode::Absolute => {
+                        match register {
+                            Some(IndexRegister::X) => panic!("hoge"),
+                            None => {
+                                self.ram.set8(
+                                    PrgRam::concat_addresses(operand1.unwrap(), operand0.unwrap()),
+                                    self.a,
+                                );
+
+                            }
+                            _ => {
+                                panic!(
+                                    "invalid register: {:?}, op_code is {:?} and addressing_mode is {:?}",
+                                    register,
+                                    op_code,
+                                    addressing_mode
+                                );
+
+                            }
+                        }
+                    }
+                    _ => {
+                        panic!(
+                            "invalid addressing_mode: {:?}, op_code is {:?}",
+                            op_code,
+                            addressing_mode
+                        )
+                    }
+
                 }
             }
             _ => panic!("invalid exec op_code: {:?}", op_code),
@@ -283,7 +417,7 @@ impl PrgRam {
         let memory_idx_low = 0x8000;
         let memory_idx_high = 0xC000;
         let mut prg_rom_idx = 0;
-        for memory_idx in (memory_idx_low..memory_idx_high) {
+        for memory_idx in memory_idx_low..memory_idx_high {
             memory[memory_idx] = prg_rom[prg_rom_idx];
             prg_rom_idx += 1;
         }
@@ -292,14 +426,14 @@ impl PrgRam {
         match chr_rom_banks_num {
             1 => {
                 prg_rom_idx = 0;
-                for memory_idx in (memory_idx_low..memory_idx_high) {
+                for memory_idx in memory_idx_low..memory_idx_high {
                     memory[memory_idx] = prg_rom[prg_rom_idx];
                     prg_rom_idx += 1;
                 }
             }
             2...255 => {
                 let memory_idx_end = 0x10000;
-                for memory_idx in (memory_idx_high..memory_idx_end) {
+                for memory_idx in memory_idx_high..memory_idx_end {
                     memory[memory_idx] = prg_rom[prg_rom_idx];
                     prg_rom_idx += 1;
                 }
@@ -338,6 +472,9 @@ impl PrgRam {
         (((self.0[addresses.1 as usize] as u16) << 0b1000) + (self.0[addresses.0 as usize]) as u16)
     }
 
+    pub fn concat_addresses(address0: u8, address1: u8) -> u16 {
+        ((address0 as u16) << 0b1000) + address1 as u16
+    }
     fn set8(&mut self, address: u16, data: u8) {
         self.0[address as usize] = data;
     }
@@ -422,9 +559,8 @@ enum AddressingMode {
     AbsoluteIndirect,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn run_test() {}
+#[derive(Debug)]
+enum IndexRegister {
+    X,
+    Y,
 }
