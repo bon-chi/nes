@@ -3,6 +3,8 @@ use std::ops::Range;
 use std::path::Path;
 use std::io::Read;
 use std::fs::File;
+use std::sync::mpsc::{Sender, Receiver};
+use std::thread;
 
 /// [CPU](http://wiki.nesdev.com/w/index.php/CPU_registers)
 pub struct Cpu {
@@ -42,8 +44,10 @@ impl Cpu {
         }
     }
 
-    pub fn run(&mut self) {
+    pub fn run(&mut self, tx: Sender<u8>) {
+
         loop {
+            tx.send(1);
             let (op_code, addressing_mode, register) = self.fetch();
             let operand = self.get_operand(addressing_mode, register);
             self.exec(op_code, operand);
@@ -82,16 +86,16 @@ impl Cpu {
                 );
             }
         };
-        #[cfg(feature="debug_log")]
-        println!(
-            "{:0x} {:?} {:?} {:?} ",
-            self.pc,
-            op_code,
-            addressing_mode,
-            register,
-        );
-        #[cfg(not(test))]
-        println!("debughoge");
+        // #[cfg(feature="debug_log")]
+        // println!(
+        //     "{:0x} {:?} {:?} {:?} ",
+        //     self.pc,
+        //     op_code,
+        //     addressing_mode,
+        //     register,
+        // );
+        // #[cfg(not(test))]
+        // println!("debughoge");
 
         self.increment_pc();
         (op_code, addressing_mode, register)

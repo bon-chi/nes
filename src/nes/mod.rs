@@ -4,6 +4,7 @@ pub mod ppu;
 use nes::cpu::Cpu;
 use nes::cpu::PrgRam;
 use std::path::Path;
+use std::sync::mpsc::{Sender, Receiver};
 
 pub struct Nes {
     cpu: Cpu,
@@ -17,8 +18,8 @@ impl Nes {
         let cpu = Cpu::new(&path);
         Nes { cpu }
     }
-    pub fn run(&mut self) {
-        self.cpu.run();
+    pub fn run(&mut self, tx: Sender<u8>) {
+        self.cpu.run(tx);
     }
 }
 
