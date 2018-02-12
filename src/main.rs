@@ -21,14 +21,16 @@ use std::thread;
 use std::sync::mpsc;
 use std::sync::mpsc::{Sender, Receiver};
 use std::time::Duration;
+use piston_window::Button::Keyboard;
+use piston_window::Key;
 
 
 fn main() {
     let (tx, rx) = mpsc::channel::<u8>();
+    let (txk, rxk) = mpsc::channel::<Option<Key>>();
     let t = thread::spawn(|| {
-        println!("{}", "hello");
         let mut nes = Nes::new("sample1.nes");
-        nes.run(tx);
+        nes.run(tx, rxk);
         // nes.run();
     });
     // let _ = t.join();
@@ -45,17 +47,21 @@ fn main() {
     let mut gl = GlGraphics::new(opengl);
     let mut events = Events::new(EventSettings::new());
     while let Some(e) = events.next(&mut window) {
-        use piston_window::Button::Keyboard;
-        use piston_window::Key;
-        println!("{}", rx.recv().unwrap());
+        // println!("{}", rx.recv().unwrap());
+        rx.recv().unwrap();
+        let mut key = None;
         if let Some(button) = e.press_args() {
             match button {
-                Keyboard(Key::W) => println!("W"),
-                Keyboard(Key::A) => println!("A"),
-                Keyboard(Key::S) => println!("S"),
-                Keyboard(Key::D) => println!("D"),
-                Keyboard(Key::J) => println!("J"),
-                Keyboard(Key::K) => println!("K"),
+                Keyboard(input) => {
+                    key = Some(input);
+                    println!("{:?}", key);
+                }
+                // Keyboard(Key::W) => println!("W"),
+                // Keyboard(Key::A) => println!("A"),
+                // Keyboard(Key::S) => println!("S"),
+                // Keyboard(Key::D) => println!("D"),
+                // Keyboard(Key::J) => println!("J"),
+                // Keyboard(Key::K) => println!("K"),
                 _ => {}
             }
             // println!("{:?}", button);
@@ -67,5 +73,6 @@ fn main() {
                 // tv.draw(&nes_controller, &c, g);
             });
         }
+        txk.send(key);
     }
 }

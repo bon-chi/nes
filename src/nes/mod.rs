@@ -1,10 +1,12 @@
 pub mod cpu;
 pub mod ppu;
 
+extern crate piston_window;
 use nes::cpu::Cpu;
 use nes::cpu::PrgRam;
 use std::path::Path;
 use std::sync::mpsc::{Sender, Receiver};
+use self::piston_window::Key;
 
 pub struct Nes {
     cpu: Cpu,
@@ -18,8 +20,8 @@ impl Nes {
         let cpu = Cpu::new(&path);
         Nes { cpu }
     }
-    pub fn run(&mut self, tx: Sender<u8>) {
-        self.cpu.run(tx);
+    pub fn run(&mut self, tx: Sender<u8>, rxk: Receiver<Option<Key>>) {
+        self.cpu.run(tx, rxk);
     }
 }
 

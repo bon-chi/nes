@@ -1,3 +1,4 @@
+extern crate piston_window;
 use std::fmt;
 use std::ops::Range;
 use std::path::Path;
@@ -5,6 +6,7 @@ use std::io::Read;
 use std::fs::File;
 use std::sync::mpsc::{Sender, Receiver};
 use std::thread;
+use self::piston_window::Key;
 
 /// [CPU](http://wiki.nesdev.com/w/index.php/CPU_registers)
 pub struct Cpu {
@@ -44,13 +46,15 @@ impl Cpu {
         }
     }
 
-    pub fn run(&mut self, tx: Sender<u8>) {
+    pub fn run(&mut self, tx: Sender<u8>, rxk: Receiver<Option<Key>>) {
 
         loop {
             tx.send(1);
             let (op_code, addressing_mode, register) = self.fetch();
             let operand = self.get_operand(addressing_mode, register);
             self.exec(op_code, operand);
+            rxk.recv().unwrap();
+            // println!("{:?}", rxk.recv().unwrap());
         }
     }
     fn fetch(&mut self) -> (OpCode, AddressingMode, Option<IndexRegister>) {
