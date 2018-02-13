@@ -1,12 +1,22 @@
 struct Ppu {
     cycle: u16,
     line: u8,
+
     name_table_num: u8,
     name_table_idx: u16,
     name_table_value: u8,
+
     attr_table_num: u8,
     attr_table_idx: u16,
     attr_table_value: u8,
+
+    pattern_table_idx0: u16,
+    pattern_table_idx1: u16,
+    pattern_table0_value0: u8,
+    pattern_table0_value1: u8,
+    pattern_table1_value0: u8,
+    pattern_table1_value1: u8,
+
     ram: Box<VRam>,
 }
 
@@ -48,10 +58,24 @@ impl Ppu {
                     );
                 }
 
-                if (self.cycle % 8) == 5 {}
-                if (self.cycle % 8) == 6 {}
-                if (self.cycle % 8) == 7 {}
-                if (self.cycle % 8) == 0 {}
+                if (self.cycle % 8) == 5 {
+                    self.pattern_table_idx0 = 0x0000 + (16 * (self.name_table_value as u16)) + (self.line as u16 % 8);
+                    self.pattern_table_idx1 = 0x0000 + 16 * (self.name_table_value as u16) + ((self.line as u16) % 8) + 8;
+                }
+                if (self.cycle % 8) == 6 {
+                    self.pattern_table0_value0 = self.ram.get_pattern_table_value(0, self.pattern_table_idx0);
+                    self.pattern_table0_value1 = self.ram.get_pattern_table_value(0, self.pattern_table_idx1);
+                }
+
+                if (self.cycle % 8) == 7 {
+                    self.pattern_table_idx0 = 0x1000 + (16 * (self.name_table_value as u16)) + (self.line as u16 % 8);
+                    self.pattern_table_idx1 = 0x1000 + 16 * (self.name_table_value as u16) + ((self.line as u16) % 8) + 8;
+
+                }
+                if (self.cycle % 8) == 0 {
+                    self.pattern_table1_value0 = self.ram.get_pattern_table_value(0, self.pattern_table_idx0);
+                    self.pattern_table1_value1 = self.ram.get_pattern_table_value(0, self.pattern_table_idx1);
+                }
             }
             if self.cycle >= 257 && self.cycle <= 320 {}
             if self.cycle >= 321 && self.cycle <= 336 {}
@@ -77,6 +101,9 @@ impl VRam {
     const ATTR_TABLE1: u16 = 0x27C0;
     const ATTR_TABLE2: u16 = 0x2BC0;
     const ATTR_TABLE3: u16 = 0x2FC0;
+
+    const PATTERN_TABLE0: u16 = 0x0000;
+    const PATTERN_TABLE1: u16 = 0x1000;
 
     fn get_name_table_value(&self, table_num: u8, index: u16) -> u8 {
         match table_num {
@@ -108,5 +135,8 @@ impl VRam {
             _ => panic!("line {} and row {} doesn't exist", line, row),
         }
 
+    }
+    fn get_pattern_table_value(&self, table_num: u8, table_index: u16) -> u8 {
+        self.0[table_index as usize]
     }
 }
