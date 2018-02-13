@@ -54,17 +54,10 @@ fn main() {
             match button {
                 Keyboard(input) => {
                     key = Some(input);
-                    println!("{:?}", key);
+                    // println!("{:?}", key);
                 }
-                // Keyboard(Key::W) => println!("W"),
-                // Keyboard(Key::A) => println!("A"),
-                // Keyboard(Key::S) => println!("S"),
-                // Keyboard(Key::D) => println!("D"),
-                // Keyboard(Key::J) => println!("J"),
-                // Keyboard(Key::K) => println!("K"),
                 _ => {}
             }
-            // println!("{:?}", button);
         }
         if let Some(args) = e.render_args() {
             gl.draw(args.viewport(), |c, g| {
