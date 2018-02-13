@@ -1,6 +1,54 @@
 struct Ppu {
+    //sprite
+    spr_ram: Box<SprRam>,
+    spr_ram_index: u8,
+    spr_register0: u8,
+    spr_register1: u8,
+    spr_register2: u8,
+    spr_register3: u8,
+    spr_register4: u8,
+    spr_register5: u8,
+    spr_register6: u8,
+    spr_register7: u8,
+    spr_buffer_register0: u8,
+    spr_buffer_register1: u8,
+    spr_buffer_register2: u8,
+    spr_buffer_register3: u8,
+    spr_buffer_register4: u8,
+    spr_buffer_register5: u8,
+    spr_buffer_register6: u8,
+    spr_buffer_register7: u8,
+    spr_latch0: u8,
+    spr_latch1: u8,
+    spr_latch2: u8,
+    spr_latch3: u8,
+    spr_latch4: u8,
+    spr_latch5: u8,
+    spr_latch6: u8,
+    spr_latch7: u8,
+    spr_counter0: u8,
+    spr_counter1: u8,
+    spr_counter2: u8,
+    spr_counter3: u8,
+    spr_counter4: u8,
+    spr_counter5: u8,
+    spr_counter6: u8,
+    spr_counter7: u8,
+
+    //background
+    vram_address: u16,
+    temporary_vram_address: u16,
+    // x_scroll
+    // first/second write toggle
+    // 16-bit shift registers * 2
+    // 8-bit shift registers * 2
     cycle: u16,
     line: u8,
+
+    shift_register0_16: u16,
+    shift_register1_16: u16,
+    shift_register0_8: u8,
+    shift_register1_8: u8,
 
     name_table_num: u8,
     name_table_idx: u16,
@@ -18,6 +66,7 @@ struct Ppu {
     pattern_table1_value1: u8,
 
     ram: Box<VRam>,
+    vram_index: u16,
 }
 
 impl Ppu {
@@ -89,6 +138,9 @@ impl Ppu {
     }
 }
 struct MemoryMap {}
+
+// ObjectAttributeMemory
+pub struct SprRam([u8; 0xFF]);
 
 pub struct VRam([u8; 0xFFFF]);
 impl VRam {
