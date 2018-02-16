@@ -6,7 +6,9 @@ use std::io::Read;
 use std::fs::File;
 use std::sync::mpsc::{Sender, Receiver};
 use std::thread;
+use std::sync::{Arc, Mutex};
 use self::piston_window::Key;
+use nes::ppu::Ppu;
 
 /// [CPU](http://wiki.nesdev.com/w/index.php/CPU_registers)
 pub struct Cpu {
@@ -19,7 +21,7 @@ pub struct Cpu {
     pc: Register16,
     sp: Register8,
     p: Register8,
-    ram: Box<PrgRam>,
+    ram: Arc<Mutex<PrgRam>>,
 }
 
 enum StatusFlag {
@@ -33,7 +35,7 @@ enum StatusFlag {
 }
 
 impl Cpu {
-    pub fn new(path: &Path) -> Cpu {
+    pub fn new(ram: Arc<Mutex<PrgRam>>) -> Cpu {
         // println!("{}", mem::size_of_val(&ram));
         Cpu {
             a: b'0',
@@ -42,7 +44,7 @@ impl Cpu {
             pc: 0x8000,
             sp: b'0',
             p: b'0',
-            ram: PrgRam::load(path),
+            ram: ram,
         }
     }
 
@@ -58,7 +60,7 @@ impl Cpu {
         }
     }
     fn fetch(&mut self) -> (OpCode, AddressingMode, Option<IndexRegister>) {
-        let instruction = self.ram.0[self.pc as usize];
+        let instruction = self.ram_value();
         let (op_code, addressing_mode, register): (OpCode, AddressingMode, Option<IndexRegister>) = match instruction {
 
             0x20 => (OpCode::JSR, AddressingMode::Absolute, None),
@@ -172,13 +174,20 @@ impl Cpu {
     }
 
     fn ram_value(&self) -> u8 {
-        self.ram.0[self.pc as usize]
+        self.ram.lock().unwrap().0[self.pc as usize]
     }
     fn get_ram_value(&self, idx: u16) -> u8 {
-        self.ram.0[idx as usize]
+        self.ram.lock().unwrap().0[idx as usize]
     }
     fn set_ram_value(&mut self, value: u8, idx: u16) {
-        self.ram.set8(idx, value);
+        self.ram.lock().unwrap().set8(idx, value);
+        match idx {
+            0x2000 => {}
+            0x2002 => {}
+            0x2005 => {}
+            0x2006 => {}
+            _ => {}
+        }
     }
     fn fetch_instruction_to_ir(&self) {}
     fn increment_pc(&mut self) {
@@ -233,7 +242,7 @@ impl Cpu {
             OpCode::BNE => {
                 if self.get_zero_flag() {
                     self.increment_pc();
-                    let dest = self.ram.0[(self.pc + 1) as usize] as u16;
+                    let dest = self.ram.lock().unwrap().0[(self.pc + 1) as usize] as u16;
                     match operand {
                         Some(Operand::Index(idx)) => self.pc = idx,
                         _ => panic!("BNE invalid operand: {:?}", operand),
@@ -356,6 +365,11 @@ impl Cpu {
         let address = PrgRam::concat_addresses(0x01 as u8, self.sp);
         self.get_ram_value(address)
     }
+
+    // for vram methods
+    pub fn vram_offset_flag(&self) -> bool {
+        self.ram.lock().unwrap().vram_offset_flag()
+    }
 }
 
 impl fmt::Debug for Cpu {
@@ -402,7 +416,7 @@ type Register16 = u16;
 pub struct PrgRam([u8; 0xFFFF]);
 
 impl PrgRam {
-    pub fn load(path: &Path) -> Box<PrgRam> {
+    pub fn load(path: &Path) -> PrgRam {
         let mut file = match File::open(path) {
             Ok(file) => file,
             Err(why) => panic!("{}: path is {:?}", why, path),
@@ -498,7 +512,7 @@ impl PrgRam {
         // let mut pattern_table1: [u8; 0x1000];
         // println!("{:?}", memory[0x8000]);
         // println!("hoge1");
-        Box::new(PrgRam(memory))
+        PrgRam(memory)
         // prg
     }
     fn fetch8(&self, address: u16) -> Register8 {
@@ -521,6 +535,10 @@ impl PrgRam {
     fn set16(&mut self, addressess: (u16, u16), data: u16) {
         self.0[addressess.0 as usize] = (data % 0x100) as u8;
         self.0[addressess.1 as usize] = (data >> 0b100) as u8;
+    }
+    fn vram_offset_flag(&self) -> bool {
+        ((self.0[0x2000] >> 2) & 0b00000001) == 1
+
     }
 }
 
