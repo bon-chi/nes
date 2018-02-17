@@ -54,7 +54,7 @@ fn main() {
             match button {
                 Keyboard(input) => {
                     key = Some(input);
-                    // println!("{:?}", key);
+                    println!("{:?}", key);
                 }
                 _ => {}
             }

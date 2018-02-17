@@ -6,9 +6,12 @@ use nes::cpu::Cpu;
 use nes::cpu::PrgRam;
 use nes::ppu::Ppu2;
 use std::path::Path;
+use std::thread;
 use std::sync::mpsc::{Sender, Receiver};
 use std::sync::{Arc, Mutex};
 use self::piston_window::Key;
+use nes::piston_window::Context;
+use nes::piston_window::Graphics;
 
 pub struct Nes {
     cpu: Cpu,
@@ -27,6 +30,13 @@ impl Nes {
     }
     pub fn run(&mut self, tx: Sender<u8>, rxk: Receiver<Option<Key>>) {
         self.cpu.run(tx, rxk);
+    }
+
+    pub fn run2<G: Graphics>(mut self, tx: Sender<u8>, rxk: Receiver<Option<Key>>, c: &Context, g: &mut G) {
+        let mut cpu = self.cpu;
+        // let mut ppu = self.ppu;
+        let t = thread::spawn(move || { cpu.run(tx, rxk); });
+        self.ppu.run(c, g);
     }
 }
 

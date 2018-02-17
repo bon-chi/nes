@@ -37,6 +37,15 @@ impl Ppu2 {
             prg_ram,
         }
     }
+    pub fn run<G: Graphics>(&mut self, c: &Context, g: &mut G) {
+        use self::graphics::Rectangle;
+        loop {
+            Rectangle::new([0.0, 1.0, 0.0, 1.0]).draw([0.0, 0.0, 85.0, 80.0], &c.draw_state, c.transform, g);
+        }
+    }
+    pub fn run2(&mut self) {
+        loop {}
+    }
 }
 
 pub struct Ppu {
