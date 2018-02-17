@@ -1,9 +1,22 @@
+extern crate piston;
 extern crate graphics;
-use nes::piston_window::Context;
+extern crate glutin_window;
+extern crate opengl_graphics;
+extern crate piston_window;
+
+use nes::ppu::piston_window::Context;
 use nes::piston_window::Graphics;
+use nes::ppu::piston::event_loop::*;
+use nes::ppu::piston::input::*;
+use nes::ppu::piston::window::WindowSettings;
+use nes::ppu::piston_window::Button::Keyboard;
+use nes::ppu::piston_window::Key;
+use nes::ppu::glutin_window::GlutinWindow as Window;
+use self::opengl_graphics::{GlGraphics, OpenGL};
 use nes::cpu::Cpu;
 use nes::cpu::PrgRam;
 use std::sync::{Arc, Mutex};
+use std::sync::mpsc::{Sender, Receiver};
 pub struct Ppu2 {
     //sprite
 
@@ -40,11 +53,44 @@ impl Ppu2 {
     pub fn run<G: Graphics>(&mut self, c: &Context, g: &mut G) {
         use self::graphics::Rectangle;
         loop {
-            Rectangle::new([0.0, 1.0, 0.0, 1.0]).draw([0.0, 0.0, 85.0, 80.0], &c.draw_state, c.transform, g);
+            // Rectangle::new([0.0, 1.0, 0.0, 1.0]).draw([0.0, 0.0, 85.0, 80.0], &c.draw_state, c.transform, g);
         }
     }
-    pub fn run2(&mut self) {
-        loop {}
+    pub fn run2(&mut self, txk: Sender<Option<Key>>, rx: Receiver<u8>) {
+        use self::graphics::Rectangle;
+        let opengl = OpenGL::V3_2;
+        let mut window: Window = WindowSettings::new("nes", [256, 240])
+            .opengl(opengl)
+            .exit_on_esc(true)
+            .build()
+            .unwrap();
+        let mut gl = GlGraphics::new(opengl);
+        let mut events = Events::new(EventSettings::new());
+        while let Some(e) = events.next(&mut window) {
+            // println!("{}", rx.recv().unwrap());
+            rx.recv().unwrap();
+            let mut key = None;
+            if let Some(button) = e.press_args() {
+                match button {
+                    Keyboard(input) => {
+                        key = Some(input);
+                        println!("{:?}", key);
+                    }
+                    _ => {}
+                }
+            }
+            if let Some(args) = e.render_args() {
+                gl.draw(args.viewport(), |c, g| {
+                    use self::graphics::clear;
+                    clear([1.0; 4], g);
+                    Rectangle::new([0.0, 1.0, 0.0, 1.0]).draw([0.0, 0.0, 85.0, 80.0], &c.draw_state, c.transform, g);
+                    Rectangle::new([1.0, 0.0, 0.0, 1.0]).draw([85.0, 80.0, 85.0, 80.0], &c.draw_state, c.transform, g);
+                    Rectangle::new([0.0, 0.0, 1.0, 1.0]).draw([170.0, 160.0, 85.0, 80.0], &c.draw_state, c.transform, g);
+                    // tv.draw(&nes_controller, &c, g);
+                });
+            }
+            txk.send(key);
+        }
     }
 }
 

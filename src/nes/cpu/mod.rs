@@ -5,6 +5,7 @@ use std::path::Path;
 use std::io::Read;
 use std::fs::File;
 use std::sync::mpsc::{Sender, Receiver};
+use std::sync::mpsc;
 use std::thread;
 use std::sync::{Arc, Mutex};
 use self::piston_window::Key;

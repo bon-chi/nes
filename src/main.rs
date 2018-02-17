@@ -28,44 +28,47 @@ use piston_window::Key;
 fn main() {
     let (tx, rx) = mpsc::channel::<u8>();
     let (txk, rxk) = mpsc::channel::<Option<Key>>();
-    let t = thread::spawn(|| {
-        let mut nes = Nes::new("sample1.nes");
-        nes.run(tx, rxk);
-        // nes.run();
-    });
+
+
+    let mut nes = Nes::new("sample1.nes");
+    nes.run3();
+    // let t = thread::spawn(|| {
+    //     let mut nes = Nes::new("sample1.nes");
+    //     nes.run(tx, rxk);
+    // });
     // let _ = t.join();
     // nes.run();
     // let nes_controller = NesController::new(nes);
-    let tv = Tv::new();
-
-    let opengl = OpenGL::V3_2;
-    let mut window: Window = WindowSettings::new("nes", [256, 240])
-        .opengl(opengl)
-        .exit_on_esc(true)
-        .build()
-        .unwrap();
-    let mut gl = GlGraphics::new(opengl);
-    let mut events = Events::new(EventSettings::new());
-    while let Some(e) = events.next(&mut window) {
-        // println!("{}", rx.recv().unwrap());
-        rx.recv().unwrap();
-        let mut key = None;
-        if let Some(button) = e.press_args() {
-            match button {
-                Keyboard(input) => {
-                    key = Some(input);
-                    println!("{:?}", key);
-                }
-                _ => {}
-            }
-        }
-        if let Some(args) = e.render_args() {
-            gl.draw(args.viewport(), |c, g| {
-                use graphics::clear;
-                clear([1.0; 4], g);
-                // tv.draw(&nes_controller, &c, g);
-            });
-        }
-        txk.send(key);
-    }
+    // let tv = Tv::new();
+    //
+    // let opengl = OpenGL::V3_2;
+    // let mut window: Window = WindowSettings::new("nes", [256, 240])
+    //     .opengl(opengl)
+    //     .exit_on_esc(true)
+    //     .build()
+    //     .unwrap();
+    // let mut gl = GlGraphics::new(opengl);
+    // let mut events = Events::new(EventSettings::new());
+    // while let Some(e) = events.next(&mut window) {
+    //     // println!("{}", rx.recv().unwrap());
+    //     rx.recv().unwrap();
+    //     let mut key = None;
+    //     if let Some(button) = e.press_args() {
+    //         match button {
+    //             Keyboard(input) => {
+    //                 key = Some(input);
+    //                 println!("{:?}", key);
+    //             }
+    //             _ => {}
+    //         }
+    //     }
+    //     if let Some(args) = e.render_args() {
+    //         gl.draw(args.viewport(), |c, g| {
+    //             use graphics::clear;
+    //             clear([1.0; 4], g);
+    //             // tv.draw(&nes_controller, &c, g);
+    //         });
+    //     }
+    //     txk.send(key);
+    // }
 }
