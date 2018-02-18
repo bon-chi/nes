@@ -1,8 +1,11 @@
 extern crate piston;
+extern crate rand;
 extern crate graphics;
 extern crate glutin_window;
 extern crate opengl_graphics;
 extern crate piston_window;
+extern crate sdl2_window;
+extern crate image as im;
 
 use nes::ppu::piston_window::Context;
 use nes::piston_window::Graphics;
@@ -12,11 +15,12 @@ use nes::ppu::piston::window::WindowSettings;
 use nes::ppu::piston_window::Button::Keyboard;
 use nes::ppu::piston_window::Key;
 use nes::ppu::glutin_window::GlutinWindow as Window;
-use self::opengl_graphics::{GlGraphics, OpenGL};
-use self::graphics::Rectangle;
+use self::opengl_graphics::{GlGraphics, OpenGL, Texture, TextureSettings};
+use self::graphics::{Rectangle, Image};
 use self::graphics::types::Color;
 use nes::cpu::Cpu;
 use nes::cpu::PrgRam;
+use self::sdl2_window::Sdl2Window;
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{Sender, Receiver};
 pub struct Ppu2 {
@@ -62,11 +66,16 @@ impl Ppu2 {
         }
     }
     fn get_pattern_value(&self) -> u8 {
+        // println!(
+        //     "high: {}, low: {}",
+        //     self.pattern_high_value_register.0,
+        //     self.pattern_low_value_register.0
+        // );
         (self.pattern_high_value_register.1 >> 7) + (self.pattern_low_value_register.1 >> 7) * 2
     }
-    fn get_palette_num(&self) -> u8 {
+    fn get_palette_num(&self, cycle: u16, line: u16) -> u8 {
         self.attr_value_register;
-        match (self.cycle - 1) % 4 {
+        match (cycle - 1) % 4 {
             0 | 1 => {
                 match self.line % 4 {
                     0 | 1 => self.attr_value_register & 0b00000011,
@@ -82,25 +91,117 @@ impl Ppu2 {
         }
 
     }
-    fn shift_and_draw_pixel<G: Graphics>(&mut self, c: &Context, g: &mut G) {
-        let (color, rectangle) = self.shift_to_pixel();
-        // println!("{:?}, {:?}", color, rectangle);
-        Rectangle::new(color).draw(rectangle, &c.draw_state, c.transform, g);
+    fn shift_and_fetch_pixel(&mut self, cycle: u32, line: u32) -> [u8; 4] {
+        self.shift_to_pixel2(cycle as u16, line as u16)
+    }
+    fn shift_and_draw_pixel<G: Graphics>(&mut self, c: &Context, g: &mut G, cycle: u16, line: u16) {
+        let (color, rectangle) = self.shift_to_pixel(cycle, line);
+        println!("{:?}, {:?}", color, rectangle);
+        // Rectangle::new(color).draw(rectangle, &c.draw_state, c.transform, g);
+        // Rectangle::new([0.5, 0.5, 0.5, 1.0]).draw(rectangle, &c.draw_state, c.transform, g);
     }
 
-    fn shift_to_pixel(&mut self) -> (Color, [f64; 4]) {
+    fn shift_to_pixel2(&mut self, cycle: u16, line: u16) -> [u8; 4] {
+        let color = self.v_ram.get_color2(self.v_ram.fetch8(
+            VRam::IMAGE_PALETTE + ((self.get_palette_num(cycle, line) as u16) * 4) +
+                (self.get_pattern_value() as u16),
+        ));
+        self.shift_registers();
+        color
+    }
+    fn shift_to_pixel(&mut self, cycle: u16, line: u16) -> (Color, [f64; 4]) {
         let color: Color = self.v_ram.get_color(self.v_ram.fetch8(
-            VRam::IMAGE_PALETTE + ((self.get_palette_num() as u16) * 4) +
+            VRam::IMAGE_PALETTE + ((self.get_palette_num(cycle, line) as u16) * 4) +
                 (self.get_pattern_value() as u16),
         ));
         self.shift_registers();
         // println!("{}", self.cycle);
-        (color, [self.cycle as f64 - 1.0, self.line as f64, 1.0, 1.0])
+        (color, [cycle as f64 - 1.0, line as f64, 1.0, 1.0])
         // (color, [self.cycle as f64 - 1.0, self.line as f64, 5.0, 5.0])
     }
     fn shift_registers(&mut self) {
         self.pattern_high_value_register.1 = self.pattern_high_value_register.1 << 1;
         self.pattern_low_value_register.1 = self.pattern_low_value_register.1 << 1;
+    }
+    pub fn run3(&mut self, txk: Sender<Option<Key>>, rx: Receiver<u8>) {
+        let opengl = OpenGL::V3_2;
+        let mut window: Sdl2Window = WindowSettings::new("nes", [256, 240])
+            .opengl(opengl)
+            .exit_on_esc(true)
+            .build()
+            .unwrap();
+        let texture_height = 240;
+        let texture_width = 256;
+        let mut gl = GlGraphics::new(opengl);
+        let mut events = Events::new(EventSettings::new());
+        let image = Image::new().rect([0.0, 0.0, 256.0, 240.0]);
+        let mut img = im::ImageBuffer::<im::Rgba<u8>, Vec<u8>>::new(texture_width, texture_height);
+        while let Some(e) = events.next(&mut window) {
+            let texture = Texture::from_image(&img, &TextureSettings::new());
+            rx.recv().unwrap();
+            let mut key = None;
+            if let Some(button) = e.press_args() {
+                match button {
+                    Keyboard(input) => {
+                        key = Some(input);
+                        println!("{:?}", key);
+                    }
+                    _ => {}
+                }
+            }
+            if let Some(args) = e.render_args() {
+                gl.draw(args.viewport(), |c, g| {
+                    use self::graphics::clear;
+                    // clear([1.0; 4], g);
+                    image.draw(&texture, &c.draw_state, c.transform, g);
+                    for line in 0..261 {
+                        for cycle in 0..321 {
+                            if 1 <= cycle && cycle <= 256 && line <= 239 {
+                                // img.put_pixel(
+                                //     cycle - 1,
+                                //     line,
+                                //     im::Rgba([rand::random(), rand::random(), rand::random(), 255]),
+                                // );
+                                // println!("{},{}", cycle, line);
+                                let color = self.shift_and_fetch_pixel(cycle, line);
+                                img.put_pixel(
+                                    cycle - 1,
+                                    line,
+                                    // im::Rgba([rand::random(), rand::random(), rand::random(), 255]),
+                                    im::Rgba(color),
+                                );
+                                if (cycle % 8) == 0 {
+                                    // load tile bit
+                                    let pattern_num = self.v_ram.fetch8(0x2000 + cycle as u16);
+                                    // println!(
+                                    //     "cycle: {}, line: {}, pattern_num: {}, vram: {}",
+                                    //     cycle,
+                                    //     line,
+                                    //     pattern_num,
+                                    //     self.v_ram.fetch8(
+                                    //         0x0000 + 16 * pattern_num as u16 +
+                                    //             (line % 8) as u16,
+                                    //     )
+                                    // );
+                                    self.pattern_high_value_register.1 = self.pattern_high_value_register.0;
+                                    self.pattern_low_value_register.1 = self.pattern_low_value_register.0;
+                                    self.pattern_high_value_register.0 = self.v_ram.fetch8(
+                                        0x0000 + 16 * pattern_num as u16 +
+                                            (line % 8) as u16,
+                                    );
+                                    self.pattern_high_value_register.1 = self.v_ram.fetch8(
+                                        0x0000 + 16 * pattern_num as u16 + (line % 8) as u16 +
+                                            8,
+                                    );
+                                }
+                            }
+                            if line >= 240 {}
+                        }
+                    }
+                });
+            }
+            txk.send(key);
+        }
     }
     pub fn run2(&mut self, txk: Sender<Option<Key>>, rx: Receiver<u8>) {
         use self::graphics::Rectangle;
@@ -128,18 +229,26 @@ impl Ppu2 {
                 gl.draw(args.viewport(), |c, g| {
                     use self::graphics::clear;
                     // clear([1.0; 4], g);
-                    // loop
-                    // cycle 0
-                    // cycle 1-256
-                    if 1 <= self.cycle && self.cycle <= 256 {
-                        self.shift_and_draw_pixel(&c, g);
+                    for line in 0..261 {
+                        for cycle in 0..321 {
+                            if 1 <= cycle && cycle <= 256 {
+                                // self.shift_and_draw_pixel(&c, g, cycle, line);
+                            }
+                        }
                     }
-                    // cycle 257-320
-                    // Rectangle::new([0.0, 1.0, 0.0, 1.0]).draw([0.0, 0.0, 85.0, 80.0], &c.draw_state, c.transform, g);
-                    // Rectangle::new([1.0, 0.0, 0.0, 1.0]).draw([85.0, 80.0, 85.0, 80.0], &c.draw_state, c.transform, g);
-                    // Rectangle::new([0.0, 0.0, 1.0, 1.0]).draw([170.0, 160.0, 85.0, 80.0], &c.draw_state, c.transform, g);
-                    // tv.draw(&nes_controller, &c, g);
                 });
+                // gl.draw(args.viewport(), |c, g| {
+                //     use self::graphics::clear;
+                //     // clear([1.0; 4], g);
+                //     // loop
+                //     // cycle 0
+                //     // cycle 1-256
+                //     if 1 <= self.cycle && self.cycle <= 256 {
+                //         self.shift_and_draw_pixel(&c, g);
+                //     }
+                //     // cycle 257-320
+                //     // tv.draw(&nes_controller, &c, g);
+                // });
                 self.cycle += 1;
                 if self.cycle >= 341 {
                     self.cycle = 0;
@@ -434,6 +543,9 @@ impl VRam {
     fn get_color(&self, idx: u8) -> Color {
         Colors::COLORS[idx as usize]
     }
+    fn get_color2(&self, idx: u8) -> [u8; 4] {
+        Colors::COLORS2[idx as usize]
+    }
 }
 
 struct VRamAddressRegister {
@@ -468,70 +580,456 @@ impl VRamAddressRegister {
 
 struct Colors;
 impl Colors {
+    const COLORS2: [[u8; 4]; 64] = [
+        [0x80, 0x80, 0x80, 0xFF],
+        [0x00, 0x3D, 0xA6, 0xFF],
+        [0x00, 0x12, 0xB0, 0xFF],
+        [0x44, 0x00, 0x96, 0xFF],
+        [0xA1, 0x00, 0x5E, 0xFF],
+        [0xC7, 0x00, 0x28, 0xFF],
+        [0xBA, 0x06, 0x00, 0xFF],
+        [0x8C, 0x17, 0x00, 0xFF],
+        [0x5C, 0x2F, 0x00, 0xFF],
+        [0x10, 0x45, 0x00, 0xFF],
+        [0x05, 0x4A, 0x00, 0xFF],
+        [0x00, 0x47, 0x2E, 0xFF],
+        [0x00, 0x41, 0x66, 0xFF],
+        [0x00, 0x00, 0x00, 0xFF],
+        [0x05, 0x05, 0x05, 0xFF],
+        [0x05, 0x05, 0x05, 0xFF],
+        [0xC7, 0xC7, 0xC7, 0xFF],
+        [0x00, 0x77, 0xFF, 0xFF],
+        [0x21, 0x55, 0xFF, 0xFF],
+        [0x82, 0x37, 0xFA, 0xFF],
+        [0xEB, 0x2F, 0xB5, 0xFF],
+        [0xFF, 0x29, 0x50, 0xFF],
+        [0xFF, 0x22, 0x00, 0xFF],
+        [0xD6, 0x32, 0x00, 0xFF],
+        [0xC4, 0x62, 0x00, 0xFF],
+        [0x35, 0x80, 0x00, 0xFF],
+        [0x05, 0x8F, 0x00, 0xFF],
+        [0x00, 0x8A, 0x55, 0xFF],
+        [0x00, 0x99, 0xCC, 0xFF],
+        [0x21, 0x21, 0x21, 0xFF],
+        [0x09, 0x09, 0x09, 0xFF],
+        [0x09, 0x09, 0x09, 0xFF],
+        [0xFF, 0xFF, 0xFF, 0xFF],
+        [0x0F, 0xD7, 0xFF, 0xFF],
+        [0x69, 0xA2, 0xFF, 0xFF],
+        [0xD4, 0x80, 0xFF, 0xFF],
+        [0xFF, 0x45, 0xF3, 0xFF],
+        [0xFF, 0x61, 0x8B, 0xFF],
+        [0xFF, 0x88, 0x33, 0xFF],
+        [0xFF, 0x9C, 0x12, 0xFF],
+        [0xFA, 0xBC, 0x20, 0xFF],
+        [0x9F, 0xE3, 0x0E, 0xFF],
+        [0x2B, 0xF0, 0x35, 0xFF],
+        [0x0C, 0xF0, 0xA4, 0xFF],
+        [0x05, 0xFB, 0xFF, 0xFF],
+        [0x5E, 0x5E, 0x5E, 0xFF],
+        [0x0D, 0x0D, 0x0D, 0xFF],
+        [0x0D, 0x0D, 0x0D, 0xFF],
+        [0xFF, 0xFF, 0xFF, 0xFF],
+        [0xA6, 0xFC, 0xFF, 0xFF],
+        [0xB3, 0xEC, 0xFF, 0xFF],
+        [0xDA, 0xAB, 0xEB, 0xFF],
+        [0xFF, 0xA8, 0xF9, 0xFF],
+        [0xFF, 0xAB, 0xB3, 0xFF],
+        [0xFF, 0xD2, 0xB0, 0xFF],
+        [0xFF, 0xEF, 0xA6, 0xFF],
+        [0xFF, 0xF7, 0x9C, 0xFF],
+        [0xD7, 0xE8, 0x95, 0xFF],
+        [0xA6, 0xED, 0xAF, 0xFF],
+        [0xA2, 0xF2, 0xDA, 0xFF],
+        [0x99, 0xFF, 0xFC, 0xFF],
+        [0xDD, 0xDD, 0xDD, 0xFF],
+        [0x11, 0x11, 0x11, 0xFF],
+        [0x11, 0x11, 0x11, 0xFF],
+    ];
     const COLORS: [[f32; 4]; 64] = [
-        [0x80 as f32, 0x80 as f32, 0x80 as f32, 1.0],
-        [0x00 as f32, 0x3D as f32, 0xA6 as f32, 1.0],
-        [0x00 as f32, 0x12 as f32, 0xB0 as f32, 1.0],
-        [0x44 as f32, 0x00 as f32, 0x96 as f32, 1.0],
-        [0xA1 as f32, 0x00 as f32, 0x5E as f32, 1.0],
-        [0xC7 as f32, 0x00 as f32, 0x28 as f32, 1.0],
-        [0xBA as f32, 0x06 as f32, 0x00 as f32, 1.0],
-        [0x8C as f32, 0x17 as f32, 0x00 as f32, 1.0],
-        [0x5C as f32, 0x2F as f32, 0x00 as f32, 1.0],
-        [0x10 as f32, 0x45 as f32, 0x00 as f32, 1.0],
-        [0x05 as f32, 0x4A as f32, 0x00 as f32, 1.0],
-        [0x00 as f32, 0x47 as f32, 0x2E as f32, 1.0],
-        [0x00 as f32, 0x41 as f32, 0x66 as f32, 1.0],
-        [0x00 as f32, 0x00 as f32, 0x00 as f32, 1.0],
-        [0x05 as f32, 0x05 as f32, 0x05 as f32, 1.0],
-        [0x05 as f32, 0x05 as f32, 0x05 as f32, 1.0],
-        [0xC7 as f32, 0xC7 as f32, 0xC7 as f32, 1.0],
-        [0x00 as f32, 0x77 as f32, 0xFF as f32, 1.0],
-        [0x21 as f32, 0x55 as f32, 0xFF as f32, 1.0],
-        [0x82 as f32, 0x37 as f32, 0xFA as f32, 1.0],
-        [0xEB as f32, 0x2F as f32, 0xB5 as f32, 1.0],
-        [0xFF as f32, 0x29 as f32, 0x50 as f32, 1.0],
-        [0xFF as f32, 0x22 as f32, 0x00 as f32, 1.0],
-        [0xD6 as f32, 0x32 as f32, 0x00 as f32, 1.0],
-        [0xC4 as f32, 0x62 as f32, 0x00 as f32, 1.0],
-        [0x35 as f32, 0x80 as f32, 0x00 as f32, 1.0],
-        [0x05 as f32, 0x8F as f32, 0x00 as f32, 1.0],
-        [0x00 as f32, 0x8A as f32, 0x55 as f32, 1.0],
-        [0x00 as f32, 0x99 as f32, 0xCC as f32, 1.0],
-        [0x21 as f32, 0x21 as f32, 0x21 as f32, 1.0],
-        [0x09 as f32, 0x09 as f32, 0x09 as f32, 1.0],
-        [0x09 as f32, 0x09 as f32, 0x09 as f32, 1.0],
-        [0xFF as f32, 0xFF as f32, 0xFF as f32, 1.0],
-        [0x0F as f32, 0xD7 as f32, 0xFF as f32, 1.0],
-        [0x69 as f32, 0xA2 as f32, 0xFF as f32, 1.0],
-        [0xD4 as f32, 0x80 as f32, 0xFF as f32, 1.0],
-        [0xFF as f32, 0x45 as f32, 0xF3 as f32, 1.0],
-        [0xFF as f32, 0x61 as f32, 0x8B as f32, 1.0],
-        [0xFF as f32, 0x88 as f32, 0x33 as f32, 1.0],
-        [0xFF as f32, 0x9C as f32, 0x12 as f32, 1.0],
-        [0xFA as f32, 0xBC as f32, 0x20 as f32, 1.0],
-        [0x9F as f32, 0xE3 as f32, 0x0E as f32, 1.0],
-        [0x2B as f32, 0xF0 as f32, 0x35 as f32, 1.0],
-        [0x0C as f32, 0xF0 as f32, 0xA4 as f32, 1.0],
-        [0x05 as f32, 0xFB as f32, 0xFF as f32, 1.0],
-        [0x5E as f32, 0x5E as f32, 0x5E as f32, 1.0],
-        [0x0D as f32, 0x0D as f32, 0x0D as f32, 1.0],
-        [0x0D as f32, 0x0D as f32, 0x0D as f32, 1.0],
-        [0xFF as f32, 0xFF as f32, 0xFF as f32, 1.0],
-        [0xA6 as f32, 0xFC as f32, 0xFF as f32, 1.0],
-        [0xB3 as f32, 0xEC as f32, 0xFF as f32, 1.0],
-        [0xDA as f32, 0xAB as f32, 0xEB as f32, 1.0],
-        [0xFF as f32, 0xA8 as f32, 0xF9 as f32, 1.0],
-        [0xFF as f32, 0xAB as f32, 0xB3 as f32, 1.0],
-        [0xFF as f32, 0xD2 as f32, 0xB0 as f32, 1.0],
-        [0xFF as f32, 0xEF as f32, 0xA6 as f32, 1.0],
-        [0xFF as f32, 0xF7 as f32, 0x9C as f32, 1.0],
-        [0xD7 as f32, 0xE8 as f32, 0x95 as f32, 1.0],
-        [0xA6 as f32, 0xED as f32, 0xAF as f32, 1.0],
-        [0xA2 as f32, 0xF2 as f32, 0xDA as f32, 1.0],
-        [0x99 as f32, 0xFF as f32, 0xFC as f32, 1.0],
-        [0xDD as f32, 0xDD as f32, 0xDD as f32, 1.0],
-        [0x11 as f32, 0x11 as f32, 0x11 as f32, 1.0],
-        [0x11 as f32, 0x11 as f32, 0x11 as f32, 1.0],
+        [
+            0x80 as f32 / 255.0,
+            0x80 as f32 / 255.0,
+            0x80 as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0x00 as f32 / 255.0,
+            0x3D as f32 / 255.0,
+            0xA6 as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0x00 as f32 / 255.0,
+            0x12 as f32 / 255.0,
+            0xB0 as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0x44 as f32 / 255.0,
+            0x00 as f32 / 255.0,
+            0x96 as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0xA1 as f32 / 255.0,
+            0x00 as f32 / 255.0,
+            0x5E as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0xC7 as f32 / 255.0,
+            0x00 as f32 / 255.0,
+            0x28 as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0xBA as f32 / 255.0,
+            0x06 as f32 / 255.0,
+            0x00 as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0x8C as f32 / 255.0,
+            0x17 as f32 / 255.0,
+            0x00 as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0x5C as f32 / 255.0,
+            0x2F as f32 / 255.0,
+            0x00 as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0x10 as f32 / 255.0,
+            0x45 as f32 / 255.0,
+            0x00 as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0x05 as f32 / 255.0,
+            0x4A as f32 / 255.0,
+            0x00 as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0x00 as f32 / 255.0,
+            0x47 as f32 / 255.0,
+            0x2E as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0x00 as f32 / 255.0,
+            0x41 as f32 / 255.0,
+            0x66 as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0x00 as f32 / 255.0,
+            0x00 as f32 / 255.0,
+            0x00 as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0x05 as f32 / 255.0,
+            0x05 as f32 / 255.0,
+            0x05 as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0x05 as f32 / 255.0,
+            0x05 as f32 / 255.0,
+            0x05 as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0xC7 as f32 / 255.0,
+            0xC7 as f32 / 255.0,
+            0xC7 as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0x00 as f32 / 255.0,
+            0x77 as f32 / 255.0,
+            0xFF as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0x21 as f32 / 255.0,
+            0x55 as f32 / 255.0,
+            0xFF as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0x82 as f32 / 255.0,
+            0x37 as f32 / 255.0,
+            0xFA as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0xEB as f32 / 255.0,
+            0x2F as f32 / 255.0,
+            0xB5 as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0xFF as f32 / 255.0,
+            0x29 as f32 / 255.0,
+            0x50 as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0xFF as f32 / 255.0,
+            0x22 as f32 / 255.0,
+            0x00 as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0xD6 as f32 / 255.0,
+            0x32 as f32 / 255.0,
+            0x00 as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0xC4 as f32 / 255.0,
+            0x62 as f32 / 255.0,
+            0x00 as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0x35 as f32 / 255.0,
+            0x80 as f32 / 255.0,
+            0x00 as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0x05 as f32 / 255.0,
+            0x8F as f32 / 255.0,
+            0x00 as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0x00 as f32 / 255.0,
+            0x8A as f32 / 255.0,
+            0x55 as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0x00 as f32 / 255.0,
+            0x99 as f32 / 255.0,
+            0xCC as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0x21 as f32 / 255.0,
+            0x21 as f32 / 255.0,
+            0x21 as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0x09 as f32 / 255.0,
+            0x09 as f32 / 255.0,
+            0x09 as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0x09 as f32 / 255.0,
+            0x09 as f32 / 255.0,
+            0x09 as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0xFF as f32 / 255.0,
+            0xFF as f32 / 255.0,
+            0xFF as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0x0F as f32 / 255.0,
+            0xD7 as f32 / 255.0,
+            0xFF as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0x69 as f32 / 255.0,
+            0xA2 as f32 / 255.0,
+            0xFF as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0xD4 as f32 / 255.0,
+            0x80 as f32 / 255.0,
+            0xFF as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0xFF as f32 / 255.0,
+            0x45 as f32 / 255.0,
+            0xF3 as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0xFF as f32 / 255.0,
+            0x61 as f32 / 255.0,
+            0x8B as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0xFF as f32 / 255.0,
+            0x88 as f32 / 255.0,
+            0x33 as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0xFF as f32 / 255.0,
+            0x9C as f32 / 255.0,
+            0x12 as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0xFA as f32 / 255.0,
+            0xBC as f32 / 255.0,
+            0x20 as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0x9F as f32 / 255.0,
+            0xE3 as f32 / 255.0,
+            0x0E as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0x2B as f32 / 255.0,
+            0xF0 as f32 / 255.0,
+            0x35 as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0x0C as f32 / 255.0,
+            0xF0 as f32 / 255.0,
+            0xA4 as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0x05 as f32 / 255.0,
+            0xFB as f32 / 255.0,
+            0xFF as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0x5E as f32 / 255.0,
+            0x5E as f32 / 255.0,
+            0x5E as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0x0D as f32 / 255.0,
+            0x0D as f32 / 255.0,
+            0x0D as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0x0D as f32 / 255.0,
+            0x0D as f32 / 255.0,
+            0x0D as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0xFF as f32 / 255.0,
+            0xFF as f32 / 255.0,
+            0xFF as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0xA6 as f32 / 255.0,
+            0xFC as f32 / 255.0,
+            0xFF as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0xB3 as f32 / 255.0,
+            0xEC as f32 / 255.0,
+            0xFF as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0xDA as f32 / 255.0,
+            0xAB as f32 / 255.0,
+            0xEB as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0xFF as f32 / 255.0,
+            0xA8 as f32 / 255.0,
+            0xF9 as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0xFF as f32 / 255.0,
+            0xAB as f32 / 255.0,
+            0xB3 as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0xFF as f32 / 255.0,
+            0xD2 as f32 / 255.0,
+            0xB0 as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0xFF as f32 / 255.0,
+            0xEF as f32 / 255.0,
+            0xA6 as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0xFF as f32 / 255.0,
+            0xF7 as f32 / 255.0,
+            0x9C as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0xD7 as f32 / 255.0,
+            0xE8 as f32 / 255.0,
+            0x95 as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0xA6 as f32 / 255.0,
+            0xED as f32 / 255.0,
+            0xAF as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0xA2 as f32 / 255.0,
+            0xF2 as f32 / 255.0,
+            0xDA as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0x99 as f32 / 255.0,
+            0xFF as f32 / 255.0,
+            0xFC as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0xDD as f32 / 255.0,
+            0xDD as f32 / 255.0,
+            0xDD as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0x11 as f32 / 255.0,
+            0x11 as f32 / 255.0,
+            0x11 as f32 / 255.0,
+            1.0,
+        ],
+        [
+            0x11 as f32 / 255.0,
+            0x11 as f32 / 255.0,
+            0x11 as f32 / 255.0,
+            1.0,
+        ],
     ];
 }

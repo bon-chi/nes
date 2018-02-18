@@ -38,7 +38,7 @@ impl Nes {
         let (txk, rxk) = mpsc::channel::<Option<Key>>();
         let mut cpu = self.cpu;
         let t = thread::spawn(move || { cpu.run(tx, rxk); });
-        self.ppu.run2(txk, rx);
+        self.ppu.run3(txk, rx);
     }
 
     pub fn run2<G: Graphics>(mut self, tx: Sender<u8>, rxk: Receiver<Option<Key>>, c: &Context, g: &mut G) {
