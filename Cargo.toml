@@ -17,4 +17,4 @@ image = "0.18"
 rand = "*"
 gl = "0.10.0"
 pistoncore-sdl2_window = "0.48.0"
-
+chrono = "0.4"

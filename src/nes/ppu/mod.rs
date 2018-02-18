@@ -7,6 +7,8 @@ extern crate piston_window;
 extern crate sdl2_window;
 extern crate image as im;
 
+use std::fs::File;
+use std::io::{BufWriter, Write};
 use nes::ppu::piston_window::Context;
 use nes::piston_window::Graphics;
 use nes::ppu::piston::event_loop::*;
@@ -23,6 +25,8 @@ use nes::cpu::PrgRam;
 use self::sdl2_window::Sdl2Window;
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{Sender, Receiver};
+use chrono::prelude::*;
+
 pub struct Ppu2 {
     //sprite
 
@@ -44,6 +48,9 @@ pub struct Ppu2 {
 }
 
 impl Ppu2 {
+    pub fn dump(&self) {
+        self.v_ram.dump();
+    }
     pub fn new(prg_ram: Arc<Mutex<PrgRam>>) -> Ppu2 {
         Ppu2 {
             v_ram: Box::new(VRam([0; 0xFFFF])),
@@ -497,6 +504,16 @@ impl VRam {
     const IMAGE_PALETTE: u16 = 0x3F00;
     const SPRITE_PALETTE: u16 = 0x3F10;
 
+    pub fn dump(&self) {
+        let dt = Local::now().format("%Y-%m-%d_%H:%M:%S").to_string();
+        let dt = "ppu_ram";
+        // println!("{:?}", dt);
+        let mut f = BufWriter::new(File::create(dt).unwrap());
+        for v in self.0.iter() {
+            f.write(&[*v]).unwrap();
+            // println!("{:?}", &[*v]);
+        }
+    }
     fn get_name_table_value(&self, table_num: u8, index: u16) -> u8 {
         match table_num {
             0 => self.0[(Self::NAME_TABLE0 + index) as usize],
