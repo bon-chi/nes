@@ -206,6 +206,10 @@ impl Cpu {
 
     fn exec(&mut self, op_code: OpCode, operand: Option<Operand>) {
         match op_code {
+            OpCode::ADC | OpCode::SBC | OpCode::ORA | OpCode::EOR | OpCode::INC | OpCode::DEC | OpCode::DEX | OpCode::INY => {
+                // check zeroflag
+                panic!("not inplemented");
+            }
             OpCode::SEI => self.sei(),
             OpCode::LDA => {
                 match operand {
@@ -239,10 +243,25 @@ impl Cpu {
 
                 }
             }
-            OpCode::INX => self.x += 1,
-            OpCode::DEY => self.y -= 1,
+            OpCode::INX => {
+                self.x += 1;
+                if self.x == 0 {
+                    self.set_flag(StatusFlag::ZeroFlag);
+                } else {
+                    self.reset_flag(StatusFlag::ZeroFlag);
+                }
+            }
+            OpCode::DEY => {
+                self.y -= 1;
+                if self.y == 0 {
+                    self.set_flag(StatusFlag::ZeroFlag);
+                } else {
+                    self.reset_flag(StatusFlag::ZeroFlag);
+                }
+            }
             OpCode::BNE => {
-                if self.get_zero_flag() {
+                println!("zero_flag: {}", self.get_zero_flag());
+                if !self.get_zero_flag() {
                     self.increment_pc();
                     let dest = self.ram.lock().unwrap().memory[(self.pc + 1) as usize] as u16;
                     match operand {
@@ -276,7 +295,14 @@ impl Cpu {
             }
             OpCode::AND => {
                 match operand {
-                    Some(Operand::Index(idx)) => self.a = self.ram_value() & self.a,
+                    Some(Operand::Index(idx)) => {
+                        self.a = self.ram_value() & self.a;
+                        if self.a == 0 {
+                            self.set_flag(StatusFlag::ZeroFlag);
+                        } else {
+                            self.reset_flag(StatusFlag::ZeroFlag);
+                        }
+                    }
                     _ => panic!("invalid operand: {:?}", operand),
                 }
             }
@@ -300,7 +326,33 @@ impl Cpu {
     }
 
     fn get_zero_flag(&self) -> bool {
+        println!("self.p: {:0b}, &: {:0b}", self.p, self.p & 0b00000010);
         (self.p & 0b00000010) == 0b00000010
+    }
+    fn reset_flag(&mut self, status_flag: StatusFlag) {
+        match status_flag {
+            StatusFlag::CarryFlag => {
+                self.p = self.p & 0b11111110;
+            }
+            StatusFlag::ZeroFlag => {
+                self.p = self.p & 0b11111101;
+            }
+            StatusFlag::InterruptDisable => {
+                self.p = self.p & 0b11111011;
+            }
+            StatusFlag::DecimalMode => {
+                self.p = self.p & 0b11110111;
+            }
+            StatusFlag::BreakCommand => {
+                self.p = self.p & 0b11101111;
+            }
+            StatusFlag::OverflowFlag => {
+                self.p = self.p & 0b10111111;
+            }
+            StatusFlag::NegativeFlag => {
+                self.p = self.p & 0b01111111;
+            }
+        }
     }
     fn set_flag(&mut self, status_flag: StatusFlag) {
         match status_flag {
