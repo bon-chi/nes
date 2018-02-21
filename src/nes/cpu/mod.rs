@@ -9,7 +9,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::sync::{Arc, Mutex};
 use self::piston_window::Key;
-use nes::ppu::{Ppu, VRam, VRamAddressRegister};
+use nes::ppu::{Ppu, VRam, VRamAddressRegister, FirstOrSecondWriteToggle};
 
 /// [CPU](http://wiki.nesdev.com/w/index.php/CPU_registers)
 pub struct Cpu {
@@ -23,7 +23,6 @@ pub struct Cpu {
     sp: Register8,
     p: Register8,
     ram: Arc<Mutex<PrgRam>>,
-    v_ram: Arc<Mutex<VRam>>,
 }
 
 enum StatusFlag {
@@ -38,7 +37,7 @@ enum StatusFlag {
 
 impl Cpu {
     pub fn new2() {}
-    pub fn new(ram: Arc<Mutex<PrgRam>>, v_ram: Arc<Mutex<VRam>>) -> Cpu {
+    pub fn new(ram: Arc<Mutex<PrgRam>>) -> Cpu {
         // println!("{}", mem::size_of_val(&ram));
         Cpu {
             a: b'0',
@@ -48,7 +47,6 @@ impl Cpu {
             sp: b'0',
             p: b'0',
             ram: ram,
-            v_ram,
         }
     }
 
@@ -415,7 +413,8 @@ pub struct PrgRam {
     v_ram_address_register: Arc<Mutex<VRamAddressRegister>>, // yyy, NN, YYYYY, XXXXX
     temporary_v_ram_address: Arc<Mutex<VRamAddressRegister>>, // yyy, NN, YYYYY, XXXXX
     fine_x_scroll: Arc<Mutex<u8>>,
-    first_or_second_write_toggle: Arc<Mutex<bool>>,
+    first_or_second_write_toggle: Arc<Mutex<FirstOrSecondWriteToggle>>,
+    v_ram: Arc<Mutex<VRam>>,
 }
 
 impl PrgRam {
@@ -424,7 +423,8 @@ impl PrgRam {
         v_ram_address_register: Arc<Mutex<VRamAddressRegister>>,
         temporary_v_ram_address: Arc<Mutex<VRamAddressRegister>>,
         fine_x_scroll: Arc<Mutex<u8>>,
-        first_or_second_write_toggle: Arc<Mutex<bool>>,
+        first_or_second_write_toggle: Arc<Mutex<FirstOrSecondWriteToggle>>,
+        v_ram: Arc<Mutex<VRam>>,
     ) -> PrgRam {
         let mut file = match File::open(path) {
             Ok(file) => file,
@@ -527,6 +527,7 @@ impl PrgRam {
             temporary_v_ram_address,
             fine_x_scroll,
             first_or_second_write_toggle,
+            v_ram,
         }
         // prg
     }
@@ -557,6 +558,7 @@ impl PrgRam {
         ((address >> 0b1000) as u8, (address % 0x100) as u8)
     }
     fn set8(&mut self, address: u16, data: u8) {
+        println!("set PrgRam {:0x}, {:0x}", address, data);
         match address {
             0x2000 => {
                 let name_table = data & 0b00000011;
@@ -566,10 +568,10 @@ impl PrgRam {
                     .set_name_table(name_table);
             }
             0x2002 => {
-                *self.first_or_second_write_toggle.lock().unwrap() = false;
+                self.first_or_second_write_toggle.lock().unwrap().set(false);
             }
             0x2005 => {
-                match *self.first_or_second_write_toggle.lock().unwrap() {
+                match self.first_or_second_write_toggle.lock().unwrap().is_true() {
                     true => {
                         let fine_y_scroll = data & 0b00000111;
                         let coarse_y_scroll = (data >> 3) & 0b00011111;
@@ -580,17 +582,18 @@ impl PrgRam {
                         self.temporary_v_ram_address.lock().unwrap().set_y_idx(
                             coarse_y_scroll,
                         );
-                        *self.first_or_second_write_toggle.lock().unwrap() = false;
                     }
                     false => {
                         *self.fine_x_scroll.lock().unwrap() = data & 0b00000111;
-                        *self.first_or_second_write_toggle.lock().unwrap() = true;
+                        let x = (data >> 3) * 0b00011111;
+                        self.temporary_v_ram_address.lock().unwrap().set_x_idx(x);
                     }
 
                 }
+                self.first_or_second_write_toggle.lock().unwrap().toggle();
             }
             0x2006 => {
-                match *self.first_or_second_write_toggle.lock().unwrap() {
+                match self.first_or_second_write_toggle.lock().unwrap().is_true() {
                     true => {
                         let (_, _, y, _) = self.temporary_v_ram_address
                             .lock()
@@ -598,12 +601,19 @@ impl PrgRam {
                             .get_vram_address();
                         let x = data & 0b00011111;
                         let y = y & ((data >> 5) & 0b00000111);
-                        self.v_ram_address_register.lock().unwrap().set_y_idx(y);
-                        self.v_ram_address_register.lock().unwrap().set_x_idx(x);
+                        self.temporary_v_ram_address.lock().unwrap().set_y_idx(y);
+                        self.temporary_v_ram_address.lock().unwrap().set_x_idx(x);
                         let (y_scroll, name_table, y, x) = self.temporary_v_ram_address
                             .lock()
                             .unwrap()
                             .get_vram_address();
+                        println!(
+                            "0x:2006_1: {:0x},{:0x},{:0x},{:0x}",
+                            y_scroll,
+                            name_table,
+                            y,
+                            x
+                        );
                         self.v_ram_address_register
                             .lock()
                             .unwrap()
@@ -613,7 +623,8 @@ impl PrgRam {
                         );
                         self.v_ram_address_register.lock().unwrap().set_y_idx(y);
                         self.v_ram_address_register.lock().unwrap().set_x_idx(x);
-                        *self.first_or_second_write_toggle.lock().unwrap() = false;
+                        // println!("0x:2006_1_dump: {}", self.v_ram)
+                        // self.first_or_second_write_toggle.lock().unwrap().set(false);
                     }
                     false => {
                         let (_, name_table, y, _) = self.temporary_v_ram_address
@@ -623,21 +634,28 @@ impl PrgRam {
                         let y_scroll = data >> 4 & 0b00000011;
                         let name_table = data >> 2 & 0b00000011;
                         let y = y & ((data & 0b00000011) << 3);
-                        self.v_ram_address_register
+                        println!(
+                            "0x:2006_0: {:0x},{:0x},{:0x}",
+                            y_scroll,
+                            name_table,
+                            y,
+                        );
+                        self.temporary_v_ram_address
                             .lock()
                             .unwrap()
                             .set_y_offset_from_scanline(y_scroll);
-                        self.v_ram_address_register.lock().unwrap().set_name_table(
-                            name_table,
-                        );
-                        self.v_ram_address_register.lock().unwrap().set_y_idx(y);
-
-                        *self.first_or_second_write_toggle.lock().unwrap() = true;
+                        self.temporary_v_ram_address
+                            .lock()
+                            .unwrap()
+                            .set_name_table(name_table);
+                        self.temporary_v_ram_address.lock().unwrap().set_y_idx(y);
                     }
                 }
+                self.first_or_second_write_toggle.lock().unwrap().toggle();
             }
             0x2007 => {
                 let address = self.v_ram_address_register.lock().unwrap().dump();
+                println!("v_ram_address_register: {:0x}", address);
                 self.v_ram.lock().unwrap().set8(address, data);
                 self.v_ram_address_register.lock().unwrap().increment(
                     self.vram_offset_flag(),
@@ -645,6 +663,7 @@ impl PrgRam {
             }
             _ => {}
         }
+
         self.memory[address as usize] = data;
     }
     fn set16(&mut self, addressess: (u16, u16), data: u16) {

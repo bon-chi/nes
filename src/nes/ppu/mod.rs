@@ -35,7 +35,7 @@ pub struct Ppu2 {
     v_ram_address_register: Arc<Mutex<VRamAddressRegister>>,
     temporary_v_ram_address: Arc<Mutex<VRamAddressRegister>>, // yyy, NN, YYYYY, XXXXX
     fine_x_scroll: Arc<Mutex<u8>>,
-    first_or_second_write_toggle: Arc<Mutex<bool>>,
+    first_or_second_write_toggle: Arc<Mutex<FirstOrSecondWriteToggle>>,
     pattern_high_value_register: (u8, u8),
     pattern_low_value_register: (u8, u8),
     attr_value_register: u8,
@@ -57,7 +57,7 @@ impl Ppu2 {
         v_ram_address_register: Arc<Mutex<VRamAddressRegister>>,
         temporary_v_ram_address: Arc<Mutex<VRamAddressRegister>>,
         fine_x_scroll: Arc<Mutex<u8>>,
-        first_or_second_write_toggle: Arc<Mutex<bool>>,
+        first_or_second_write_toggle: Arc<Mutex<FirstOrSecondWriteToggle>>,
     ) -> Ppu2 {
         Ppu2 {
             v_ram,
@@ -566,7 +566,8 @@ impl VRam {
     fn fetch8(&self, address: u16) -> u8 {
         self.0[address as usize]
     }
-    fn set8(&mut self, address: u16, data: u8) {
+    pub fn set8(&mut self, address: u16, data: u8) {
+        println!("set VRam {:0x}, {:0x}", address, data);
         self.0[address as usize] = data;
     }
     fn fetch_tile_lines(&self, name_table_num: u8, y_panel_pos: u8, x_panel_pos: u8) -> (u8, u8) {
@@ -588,6 +589,24 @@ pub struct VRamAddressRegister {
     name_table_num: u8,
     y_idx: u8,
     x_idx: u8,
+}
+pub struct FirstOrSecondWriteToggle(bool);
+impl FirstOrSecondWriteToggle {
+    pub fn new() -> FirstOrSecondWriteToggle {
+        FirstOrSecondWriteToggle(false)
+    }
+    pub fn set(&mut self, flag: bool) {
+        self.0 = flag;
+    }
+    pub fn toggle(&mut self) {
+        match self.0 {
+            true => self.0 = false,
+            false => self.0 = true,
+        }
+    }
+    pub fn is_true(&self) -> bool {
+        self.0
+    }
 }
 
 impl VRamAddressRegister {
@@ -637,7 +656,22 @@ impl VRamAddressRegister {
             self.x_idx += 1;
         }
     }
-    pub fn dump(&self) -> u16 {}
+    pub fn dump(&self) -> u16 {
+        let y_scroll = (self.y_offset_from_scanline as u16) << 12;
+        let name_table_num = (self.name_table_num as u16) << 10;
+        let y = (self.y_idx as u16) << 5;
+        println!(
+            "{:0x}, {:0x}, {:0x}, {:0x}",
+            self.y_offset_from_scanline,
+            // y_scroll,
+            self.name_table_num,
+            // name_table_num,
+            self.y_idx,
+            // y,
+            self.x_idx as u16
+        );
+        y + name_table_num + y + (self.x_idx as u16)
+    }
 }
 
 struct Colors;

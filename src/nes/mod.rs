@@ -5,7 +5,7 @@ extern crate piston_window;
 use nes::cpu::Cpu;
 use nes::cpu::PrgRam;
 use nes::ppu::Ppu2;
-use nes::ppu::{VRam, VRamAddressRegister};
+use nes::ppu::{VRam, VRamAddressRegister, FirstOrSecondWriteToggle};
 use std::path::Path;
 use std::thread;
 use std::sync::mpsc::{Sender, Receiver};
@@ -28,7 +28,8 @@ impl Nes {
         let v_ram_address_register = Arc::new(Mutex::new(VRamAddressRegister::new()));
         let temporary_v_ram_address = Arc::new(Mutex::new(VRamAddressRegister::new()));
         let fine_x_scroll = Arc::new(Mutex::new(0));
-        let first_or_second_write_toggle = Arc::new(Mutex::new(false));
+        let first_or_second_write_toggle = Arc::new(Mutex::new(FirstOrSecondWriteToggle::new()));
+        let v_ram = Arc::new(Mutex::new(VRam::new()));
         let prg_ram = Arc::new(Mutex::new(
             (PrgRam::load(
                 &path,
@@ -36,10 +37,10 @@ impl Nes {
                 temporary_v_ram_address.clone(),
                 fine_x_scroll.clone(),
                 first_or_second_write_toggle.clone(),
+                v_ram.clone(),
             )),
         ));
-        let v_ram = Arc::new(Mutex::new(VRam::new()));
-        let cpu = Cpu::new(prg_ram.clone(), v_ram.clone());
+        let cpu = Cpu::new(prg_ram.clone());
         let ppu = Ppu2::new(
             prg_ram.clone(),
             v_ram.clone(),
