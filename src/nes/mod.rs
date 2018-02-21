@@ -5,6 +5,7 @@ extern crate piston_window;
 use nes::cpu::Cpu;
 use nes::cpu::PrgRam;
 use nes::ppu::Ppu2;
+use nes::ppu::{VRam, VRamAddressRegister};
 use std::path::Path;
 use std::thread;
 use std::sync::mpsc::{Sender, Receiver};
@@ -24,9 +25,26 @@ impl Nes {
         // let path_string = format!("{}", casette_name);
         let path_string = format!("cassette/{}", String::from(casette_name));
         let path = Path::new(&path_string);
-        let prg_ram = Arc::new(Mutex::new(PrgRam::load(&path)));
-        let cpu = Cpu::new(prg_ram.clone());
-        let ppu = Ppu2::new(prg_ram.clone());
+        let temporary_v_ram_address = Arc::new(Mutex::new(VRamAddressRegister::new()));
+        let fine_x_scroll = Arc::new(Mutex::new(0));
+        let first_or_second_write_toggle = Arc::new(Mutex::new(false));
+        let prg_ram = Arc::new(Mutex::new(
+            (PrgRam::load(
+                &path,
+                temporary_v_ram_address.clone(),
+                fine_x_scroll.clone(),
+                first_or_second_write_toggle.clone(),
+            )),
+        ));
+        let v_ram = Arc::new(Mutex::new(VRam::new()));
+        let cpu = Cpu::new(prg_ram.clone(), v_ram.clone());
+        let ppu = Ppu2::new(
+            prg_ram.clone(),
+            v_ram.clone(),
+            temporary_v_ram_address.clone(),
+            fine_x_scroll.clone(),
+            first_or_second_write_toggle.clone(),
+        );
         Nes { cpu, ppu }
     }
     pub fn run(&mut self, tx: Sender<u8>, rxk: Receiver<Option<Key>>) {
@@ -39,7 +57,7 @@ impl Nes {
         let mut cpu = self.cpu;
         let t = thread::spawn(move || { cpu.run(tx, rxk); });
         self.ppu.dump();
-        // self.ppu.run3(txk, rx);
+        self.ppu.run3(txk, rx);
     }
 
     pub fn run2<G: Graphics>(mut self, tx: Sender<u8>, rxk: Receiver<Option<Key>>, c: &Context, g: &mut G) {

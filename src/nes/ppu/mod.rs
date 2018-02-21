@@ -31,11 +31,11 @@ pub struct Ppu2 {
     //sprite
 
     //background
-    v_ram: Box<VRam>,
+    v_ram: Arc<Mutex<VRam>>,
     v_ram_address_register: VRamAddressRegister,
-    temporary_v_ram_address: VRamAddressRegister, // yyy, NN, YYYYY, XXXXX
-    fine_x_scroll: u8,
-    first_or_second_write_toggle: bool,
+    temporary_v_ram_address: Arc<Mutex<VRamAddressRegister>>, // yyy, NN, YYYYY, XXXXX
+    fine_x_scroll: Arc<Mutex<u8>>,
+    first_or_second_write_toggle: Arc<Mutex<bool>>,
     pattern_high_value_register: (u8, u8),
     pattern_low_value_register: (u8, u8),
     attr_value_register: u8,
@@ -49,15 +49,21 @@ pub struct Ppu2 {
 
 impl Ppu2 {
     pub fn dump(&self) {
-        self.v_ram.dump();
+        self.v_ram.lock().unwrap().dump();
     }
-    pub fn new(prg_ram: Arc<Mutex<PrgRam>>) -> Ppu2 {
+    pub fn new(
+        prg_ram: Arc<Mutex<PrgRam>>,
+        v_ram: Arc<Mutex<VRam>>,
+        temporary_v_ram_address: Arc<Mutex<VRamAddressRegister>>,
+        fine_x_scroll: Arc<Mutex<u8>>,
+        first_or_second_write_toggle: Arc<Mutex<bool>>,
+    ) -> Ppu2 {
         Ppu2 {
-            v_ram: Box::new(VRam([0; 0xFFFF])),
+            v_ram,
             v_ram_address_register: VRamAddressRegister::new(),
-            temporary_v_ram_address: VRamAddressRegister::new(),
-            fine_x_scroll: 0,
-            first_or_second_write_toggle: false,
+            temporary_v_ram_address,
+            fine_x_scroll,
+            first_or_second_write_toggle,
             pattern_high_value_register: (0, 0),
             pattern_low_value_register: (0, 0),
             attr_value_register: 0,
@@ -109,18 +115,23 @@ impl Ppu2 {
     }
 
     fn shift_to_pixel2(&mut self, cycle: u16, line: u16) -> [u8; 4] {
-        let color = self.v_ram.get_color2(self.v_ram.fetch8(
+        let idx = self.v_ram.lock().unwrap().fetch8(
             VRam::IMAGE_PALETTE + ((self.get_palette_num(cycle, line) as u16) * 4) +
                 (self.get_pattern_value() as u16),
-        ));
+        );
+        let color = self.v_ram.lock().unwrap().get_color2(idx);
         self.shift_registers();
         color
     }
     fn shift_to_pixel(&mut self, cycle: u16, line: u16) -> (Color, [f64; 4]) {
-        let color: Color = self.v_ram.get_color(self.v_ram.fetch8(
-            VRam::IMAGE_PALETTE + ((self.get_palette_num(cycle, line) as u16) * 4) +
-                (self.get_pattern_value() as u16),
-        ));
+        let color: Color = self.v_ram.lock().unwrap().get_color(
+            self.v_ram
+                .lock()
+                .unwrap()
+                .fetch8(
+                    VRam::IMAGE_PALETTE + ((self.get_palette_num(cycle, line) as u16) * 4) + (self.get_pattern_value() as u16),
+                ),
+        );
         self.shift_registers();
         // println!("{}", self.cycle);
         (color, [cycle as f64 - 1.0, line as f64, 1.0, 1.0])
@@ -145,7 +156,7 @@ impl Ppu2 {
         let mut img = im::ImageBuffer::<im::Rgba<u8>, Vec<u8>>::new(texture_width, texture_height);
         while let Some(e) = events.next(&mut window) {
             let texture = Texture::from_image(&img, &TextureSettings::new());
-            rx.recv().unwrap();
+            // rx.recv().unwrap();
             let mut key = None;
             if let Some(button) = e.press_args() {
                 match button {
@@ -179,7 +190,7 @@ impl Ppu2 {
                                 );
                                 if (cycle % 8) == 0 {
                                     // load tile bit
-                                    let pattern_num = self.v_ram.fetch8(0x2000 + cycle as u16);
+                                    let pattern_num = self.v_ram.lock().unwrap().fetch8(0x2000 + cycle as u16);
                                     // println!(
                                     //     "cycle: {}, line: {}, pattern_num: {}, vram: {}",
                                     //     cycle,
@@ -192,11 +203,11 @@ impl Ppu2 {
                                     // );
                                     self.pattern_high_value_register.1 = self.pattern_high_value_register.0;
                                     self.pattern_low_value_register.1 = self.pattern_low_value_register.0;
-                                    self.pattern_high_value_register.0 = self.v_ram.fetch8(
+                                    self.pattern_high_value_register.0 = self.v_ram.lock().unwrap().fetch8(
                                         0x0000 + 16 * pattern_num as u16 +
                                             (line % 8) as u16,
                                     );
-                                    self.pattern_high_value_register.1 = self.v_ram.fetch8(
+                                    self.pattern_high_value_register.1 = self.v_ram.lock().unwrap().fetch8(
                                         0x0000 + 16 * pattern_num as u16 + (line % 8) as u16 +
                                             8,
                                     );
@@ -207,7 +218,7 @@ impl Ppu2 {
                     }
                 });
             }
-            txk.send(key);
+            // txk.send(key);
         }
     }
     pub fn run2(&mut self, txk: Sender<Option<Key>>, rx: Receiver<u8>) {
@@ -503,6 +514,9 @@ impl VRam {
 
     const IMAGE_PALETTE: u16 = 0x3F00;
     const SPRITE_PALETTE: u16 = 0x3F10;
+    pub fn new() -> Self {
+        VRam([0; 0xFFFF])
+    }
 
     pub fn dump(&self) {
         let dt = Local::now().format("%Y-%m-%d_%H:%M:%S").to_string();
@@ -565,7 +579,7 @@ impl VRam {
     }
 }
 
-struct VRamAddressRegister {
+pub struct VRamAddressRegister {
     y_offset_from_scanline: u8,
     name_table_num: u8,
     y_idx: u8,
@@ -573,7 +587,7 @@ struct VRamAddressRegister {
 }
 
 impl VRamAddressRegister {
-    fn new() -> VRamAddressRegister {
+    pub fn new() -> VRamAddressRegister {
         VRamAddressRegister {
             y_offset_from_scanline: 0,
             name_table_num: 0,
@@ -592,6 +606,18 @@ impl VRamAddressRegister {
             self.x_idx += 1;
         }
         (fine_y_scroll, name_table_num, y_panel_pos, x_panel_pos)
+    }
+    pub fn set_y_offset_from_scanline(&mut self, offset: u8) {
+        self.y_offset_from_scanline = offset;
+    }
+    pub fn set_name_table(&mut self, name_table: u8) {
+        self.name_table_num = name_table;
+    }
+    pub fn set_y_idx(&mut self, idx: u8) {
+        self.y_idx = idx;
+    }
+    pub fn set_x_idx(&mut self, idx: u8) {
+        self.x_idx = idx;
     }
 }
 

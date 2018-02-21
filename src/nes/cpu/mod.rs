@@ -9,7 +9,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::sync::{Arc, Mutex};
 use self::piston_window::Key;
-use nes::ppu::Ppu;
+use nes::ppu::{Ppu, VRam, VRamAddressRegister};
 
 /// [CPU](http://wiki.nesdev.com/w/index.php/CPU_registers)
 pub struct Cpu {
@@ -23,6 +23,7 @@ pub struct Cpu {
     sp: Register8,
     p: Register8,
     ram: Arc<Mutex<PrgRam>>,
+    v_ram: Arc<Mutex<VRam>>,
 }
 
 enum StatusFlag {
@@ -36,7 +37,8 @@ enum StatusFlag {
 }
 
 impl Cpu {
-    pub fn new(ram: Arc<Mutex<PrgRam>>) -> Cpu {
+    pub fn new2() {}
+    pub fn new(ram: Arc<Mutex<PrgRam>>, v_ram: Arc<Mutex<VRam>>) -> Cpu {
         // println!("{}", mem::size_of_val(&ram));
         Cpu {
             a: b'0',
@@ -46,17 +48,18 @@ impl Cpu {
             sp: b'0',
             p: b'0',
             ram: ram,
+            v_ram,
         }
     }
 
     pub fn run(&mut self, tx: Sender<u8>, rxk: Receiver<Option<Key>>) {
 
         loop {
-            tx.send(1);
+            // tx.send(1);
             let (op_code, addressing_mode, register) = self.fetch();
             let operand = self.get_operand(addressing_mode, register);
             self.exec(op_code, operand);
-            rxk.recv().unwrap();
+            // rxk.recv().unwrap();
             // println!("{:?}", rxk.recv().unwrap());
         }
     }
@@ -175,10 +178,10 @@ impl Cpu {
     }
 
     fn ram_value(&self) -> u8 {
-        self.ram.lock().unwrap().0[self.pc as usize]
+        self.ram.lock().unwrap().memory[self.pc as usize]
     }
     fn get_ram_value(&self, idx: u16) -> u8 {
-        self.ram.lock().unwrap().0[idx as usize]
+        self.ram.lock().unwrap().memory[idx as usize]
     }
     fn set_ram_value(&mut self, value: u8, idx: u16) {
         self.ram.lock().unwrap().set8(idx, value);
@@ -243,7 +246,7 @@ impl Cpu {
             OpCode::BNE => {
                 if self.get_zero_flag() {
                     self.increment_pc();
-                    let dest = self.ram.lock().unwrap().0[(self.pc + 1) as usize] as u16;
+                    let dest = self.ram.lock().unwrap().memory[(self.pc + 1) as usize] as u16;
                     match operand {
                         Some(Operand::Index(idx)) => self.pc = idx,
                         _ => panic!("BNE invalid operand: {:?}", operand),
@@ -414,10 +417,20 @@ type Register16 = u16;
 //     // ppu_memory: [u8; 2 ^ 16],
 // }
 // #[derive(Debug)]
-pub struct PrgRam([u8; 0xFFFF]);
+pub struct PrgRam {
+    memory: Box<[u8; 0xFFFF]>,
+    temporary_v_ram_address: Arc<Mutex<VRamAddressRegister>>, // yyy, NN, YYYYY, XXXXX
+    fine_x_scroll: Arc<Mutex<u8>>,
+    first_or_second_write_toggle: Arc<Mutex<bool>>,
+}
 
 impl PrgRam {
-    pub fn load(path: &Path) -> PrgRam {
+    pub fn load(
+        path: &Path,
+        temporary_v_ram_address: Arc<Mutex<VRamAddressRegister>>,
+        fine_x_scroll: Arc<Mutex<u8>>,
+        first_or_second_write_toggle: Arc<Mutex<bool>>,
+    ) -> PrgRam {
         let mut file = match File::open(path) {
             Ok(file) => file,
             Err(why) => panic!("{}: path is {:?}", why, path),
@@ -464,7 +477,7 @@ impl PrgRam {
             chr_rom.push(nes_buffer[i as usize]);
         }
 
-        let mut memory: [u8; 0xFFFF] = [0; 0xFFFF];
+        let mut memory: Box<[u8; 0xFFFF]> = Box::new([0; 0xFFFF]);
 
         let memory_idx_low = 0x8000;
         let memory_idx_high = 0xC000;
@@ -513,15 +526,20 @@ impl PrgRam {
         // let mut pattern_table1: [u8; 0x1000];
         // println!("{:?}", memory[0x8000]);
         // println!("hoge1");
-        PrgRam(memory)
+        PrgRam {
+            memory,
+            temporary_v_ram_address,
+            fine_x_scroll,
+            first_or_second_write_toggle,
+        }
         // prg
     }
     fn fetch8(&self, address: u16) -> Register8 {
-        self.0[address as usize]
+        self.memory[address as usize]
     }
 
     fn fetch16(&self, addresses: (u16, u16)) -> Register16 {
-        (((self.0[addresses.1 as usize] as u16) << 0b1000) + (self.0[addresses.0 as usize]) as u16)
+        (((self.memory[addresses.1 as usize] as u16) << 0b1000) + (self.memory[addresses.0 as usize]) as u16)
     }
 
     pub fn concat_addresses(address0: u8, address1: u8) -> u16 {
@@ -531,14 +549,61 @@ impl PrgRam {
         ((address >> 0b1000) as u8, (address % 0x100) as u8)
     }
     fn set8(&mut self, address: u16, data: u8) {
-        self.0[address as usize] = data;
+        match address {
+            0x2000 => {
+                let name_table = data & 0b00000011;
+                self.temporary_v_ram_address
+                    .lock()
+                    .unwrap()
+                    .set_name_table(name_table);
+            }
+            0x2002 => {
+                *self.first_or_second_write_toggle.lock().unwrap() = false;
+            }
+            0x2005 => {
+                match *self.first_or_second_write_toggle.lock().unwrap() {
+                    true => {
+                        let fine_y_scroll = data & 0b00000111;
+                        let coarse_y_scroll = (data >> 3) & 0b00011111;
+                        self.temporary_v_ram_address
+                            .lock()
+                            .unwrap()
+                            .set_y_offset_from_scanline(fine_y_scroll);
+                        self.temporary_v_ram_address.lock().unwrap().set_y_idx(
+                            coarse_y_scroll,
+                        );
+                        *self.first_or_second_write_toggle.lock().unwrap() = false;
+                    }
+                    false => {
+                        *self.fine_x_scroll.lock().unwrap() = data & 0b00000111;
+                        *self.first_or_second_write_toggle.lock().unwrap() = true;
+                    }
+
+                }
+            }
+            0x2006 => {
+                match *self.first_or_second_write_toggle.lock().unwrap() {
+                    true => {
+
+                        *self.first_or_second_write_toggle.lock().unwrap() = false;
+                    }
+                    false => {
+
+
+                        *self.first_or_second_write_toggle.lock().unwrap() = true;
+                    }
+                }
+            }
+            _ => {}
+        }
+        self.memory[address as usize] = data;
     }
     fn set16(&mut self, addressess: (u16, u16), data: u16) {
-        self.0[addressess.0 as usize] = (data % 0x100) as u8;
-        self.0[addressess.1 as usize] = (data >> 0b100) as u8;
+        self.memory[addressess.0 as usize] = (data % 0x100) as u8;
+        self.memory[addressess.1 as usize] = (data >> 0b100) as u8;
     }
     fn vram_offset_flag(&self) -> bool {
-        ((self.0[0x2000] >> 2) & 0b00000001) == 1
+        ((self.memory[0x2000] >> 2) & 0b00000001) == 1
 
     }
 }
