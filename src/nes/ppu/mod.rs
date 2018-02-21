@@ -566,6 +566,9 @@ impl VRam {
     fn fetch8(&self, address: u16) -> u8 {
         self.0[address as usize]
     }
+    fn set8(&mut self, address: u16, data: u8) {
+        self.0[address as usize] = data;
+    }
     fn fetch_tile_lines(&self, name_table_num: u8, y_panel_pos: u8, x_panel_pos: u8) -> (u8, u8) {
         let pattern_table_idx: u16 = (name_table_num * 0x0400) as u16 + Self::NAME_TABLE0 + (y_panel_pos as u16);
         let pattern0 = self.0[pattern_table_idx as usize];
@@ -627,6 +630,14 @@ impl VRamAddressRegister {
     pub fn set_x_idx(&mut self, idx: u8) {
         self.x_idx = idx;
     }
+    pub fn increment(&mut self, flag: bool) {
+        if flag {
+            self.y_idx += 1;
+        } else {
+            self.x_idx += 1;
+        }
+    }
+    pub fn dump(&self) -> u16 {}
 }
 
 struct Colors;

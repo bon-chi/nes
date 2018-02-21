@@ -185,13 +185,6 @@ impl Cpu {
     }
     fn set_ram_value(&mut self, value: u8, idx: u16) {
         self.ram.lock().unwrap().set8(idx, value);
-        match idx {
-            0x2000 => {}
-            0x2002 => {}
-            0x2005 => {}
-            0x2006 => {}
-            _ => {}
-        }
     }
     fn fetch_instruction_to_ir(&self) {}
     fn increment_pc(&mut self) {
@@ -538,11 +531,23 @@ impl PrgRam {
         // prg
     }
     fn fetch8(&self, address: u16) -> Register8 {
-        self.memory[address as usize]
+        let data = self.memory[address as usize];
+        if address == 0x2007 {
+            self.v_ram_address_register.lock().unwrap().increment(
+                self.vram_offset_flag(),
+            )
+        }
+        data
     }
 
     fn fetch16(&self, addresses: (u16, u16)) -> Register16 {
-        (((self.memory[addresses.1 as usize] as u16) << 0b1000) + (self.memory[addresses.0 as usize]) as u16)
+        let data = (((self.memory[addresses.1 as usize] as u16) << 0b1000) + (self.memory[addresses.0 as usize]) as u16);
+        if addresses.0 == 0x2007 || addresses.1 == 0x2007 {
+            self.v_ram_address_register.lock().unwrap().increment(
+                self.vram_offset_flag(),
+            )
+        }
+        data
     }
 
     pub fn concat_addresses(address0: u8, address1: u8) -> u16 {
@@ -587,6 +592,14 @@ impl PrgRam {
             0x2006 => {
                 match *self.first_or_second_write_toggle.lock().unwrap() {
                     true => {
+                        let (_, _, y, _) = self.temporary_v_ram_address
+                            .lock()
+                            .unwrap()
+                            .get_vram_address();
+                        let x = data & 0b00011111;
+                        let y = y & ((data >> 5) & 0b00000111);
+                        self.v_ram_address_register.lock().unwrap().set_y_idx(y);
+                        self.v_ram_address_register.lock().unwrap().set_x_idx(x);
                         let (y_scroll, name_table, y, x) = self.temporary_v_ram_address
                             .lock()
                             .unwrap()
@@ -603,19 +616,42 @@ impl PrgRam {
                         *self.first_or_second_write_toggle.lock().unwrap() = false;
                     }
                     false => {
-
+                        let (_, name_table, y, _) = self.temporary_v_ram_address
+                            .lock()
+                            .unwrap()
+                            .get_vram_address();
+                        let y_scroll = data >> 4 & 0b00000011;
+                        let name_table = data >> 2 & 0b00000011;
+                        let y = y & ((data & 0b00000011) << 3);
+                        self.v_ram_address_register
+                            .lock()
+                            .unwrap()
+                            .set_y_offset_from_scanline(y_scroll);
+                        self.v_ram_address_register.lock().unwrap().set_name_table(
+                            name_table,
+                        );
+                        self.v_ram_address_register.lock().unwrap().set_y_idx(y);
 
                         *self.first_or_second_write_toggle.lock().unwrap() = true;
                     }
                 }
+            }
+            0x2007 => {
+                let address = self.v_ram_address_register.lock().unwrap().dump();
+                self.v_ram.lock().unwrap().set8(address, data);
+                self.v_ram_address_register.lock().unwrap().increment(
+                    self.vram_offset_flag(),
+                )
             }
             _ => {}
         }
         self.memory[address as usize] = data;
     }
     fn set16(&mut self, addressess: (u16, u16), data: u16) {
-        self.memory[addressess.0 as usize] = (data % 0x100) as u8;
-        self.memory[addressess.1 as usize] = (data >> 0b100) as u8;
+        self.set8(addressess.0, (data % 0x100) as u8);
+        self.set8(addressess.1, (data >> 0b100) as u8);
+        // self.memory[addressess.0 as usize] = (data % 0x100) as u8;
+        // self.memory[addressess.1 as usize] = (data >> 0b100) as u8;
     }
     fn vram_offset_flag(&self) -> bool {
         ((self.memory[0x2000] >> 2) & 0b00000001) == 1
