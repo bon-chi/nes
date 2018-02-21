@@ -419,6 +419,7 @@ type Register16 = u16;
 // #[derive(Debug)]
 pub struct PrgRam {
     memory: Box<[u8; 0xFFFF]>,
+    v_ram_address_register: Arc<Mutex<VRamAddressRegister>>, // yyy, NN, YYYYY, XXXXX
     temporary_v_ram_address: Arc<Mutex<VRamAddressRegister>>, // yyy, NN, YYYYY, XXXXX
     fine_x_scroll: Arc<Mutex<u8>>,
     first_or_second_write_toggle: Arc<Mutex<bool>>,
@@ -427,6 +428,7 @@ pub struct PrgRam {
 impl PrgRam {
     pub fn load(
         path: &Path,
+        v_ram_address_register: Arc<Mutex<VRamAddressRegister>>,
         temporary_v_ram_address: Arc<Mutex<VRamAddressRegister>>,
         fine_x_scroll: Arc<Mutex<u8>>,
         first_or_second_write_toggle: Arc<Mutex<bool>>,
@@ -528,6 +530,7 @@ impl PrgRam {
         // println!("hoge1");
         PrgRam {
             memory,
+            v_ram_address_register,
             temporary_v_ram_address,
             fine_x_scroll,
             first_or_second_write_toggle,
@@ -584,7 +587,19 @@ impl PrgRam {
             0x2006 => {
                 match *self.first_or_second_write_toggle.lock().unwrap() {
                     true => {
-
+                        let (y_scroll, name_table, y, x) = self.temporary_v_ram_address
+                            .lock()
+                            .unwrap()
+                            .get_vram_address();
+                        self.v_ram_address_register
+                            .lock()
+                            .unwrap()
+                            .set_y_offset_from_scanline(y_scroll);
+                        self.v_ram_address_register.lock().unwrap().set_name_table(
+                            name_table,
+                        );
+                        self.v_ram_address_register.lock().unwrap().set_y_idx(y);
+                        self.v_ram_address_register.lock().unwrap().set_x_idx(x);
                         *self.first_or_second_write_toggle.lock().unwrap() = false;
                     }
                     false => {

@@ -32,7 +32,7 @@ pub struct Ppu2 {
 
     //background
     v_ram: Arc<Mutex<VRam>>,
-    v_ram_address_register: VRamAddressRegister,
+    v_ram_address_register: Arc<Mutex<VRamAddressRegister>>,
     temporary_v_ram_address: Arc<Mutex<VRamAddressRegister>>, // yyy, NN, YYYYY, XXXXX
     fine_x_scroll: Arc<Mutex<u8>>,
     first_or_second_write_toggle: Arc<Mutex<bool>>,
@@ -54,13 +54,14 @@ impl Ppu2 {
     pub fn new(
         prg_ram: Arc<Mutex<PrgRam>>,
         v_ram: Arc<Mutex<VRam>>,
+        v_ram_address_register: Arc<Mutex<VRamAddressRegister>>,
         temporary_v_ram_address: Arc<Mutex<VRamAddressRegister>>,
         fine_x_scroll: Arc<Mutex<u8>>,
         first_or_second_write_toggle: Arc<Mutex<bool>>,
     ) -> Ppu2 {
         Ppu2 {
             v_ram,
-            v_ram_address_register: VRamAddressRegister::new(),
+            v_ram_address_register,
             temporary_v_ram_address,
             fine_x_scroll,
             first_or_second_write_toggle,
@@ -605,6 +606,13 @@ impl VRamAddressRegister {
         } else {
             self.x_idx += 1;
         }
+        (fine_y_scroll, name_table_num, y_panel_pos, x_panel_pos)
+    }
+    pub fn get_vram_address(&self) -> (u8, u8, u8, u8) {
+        let fine_y_scroll = self.y_offset_from_scanline;
+        let name_table_num = self.name_table_num;
+        let y_panel_pos = self.y_idx;
+        let x_panel_pos = self.x_idx;
         (fine_y_scroll, name_table_num, y_panel_pos, x_panel_pos)
     }
     pub fn set_y_offset_from_scanline(&mut self, offset: u8) {

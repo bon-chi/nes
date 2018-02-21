@@ -25,12 +25,14 @@ impl Nes {
         // let path_string = format!("{}", casette_name);
         let path_string = format!("cassette/{}", String::from(casette_name));
         let path = Path::new(&path_string);
+        let v_ram_address_register = Arc::new(Mutex::new(VRamAddressRegister::new()));
         let temporary_v_ram_address = Arc::new(Mutex::new(VRamAddressRegister::new()));
         let fine_x_scroll = Arc::new(Mutex::new(0));
         let first_or_second_write_toggle = Arc::new(Mutex::new(false));
         let prg_ram = Arc::new(Mutex::new(
             (PrgRam::load(
                 &path,
+                v_ram_address_register.clone(),
                 temporary_v_ram_address.clone(),
                 fine_x_scroll.clone(),
                 first_or_second_write_toggle.clone(),
@@ -41,6 +43,7 @@ impl Nes {
         let ppu = Ppu2::new(
             prg_ram.clone(),
             v_ram.clone(),
+            v_ram_address_register.clone(),
             temporary_v_ram_address.clone(),
             fine_x_scroll.clone(),
             first_or_second_write_toggle.clone(),
