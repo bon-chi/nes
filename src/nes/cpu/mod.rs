@@ -95,18 +95,18 @@ impl Cpu {
             }
         };
         // #[cfg(feature="debug_log")]
-        match op_code {
-            OpCode::JMP => {}
-            _ => {
-                println!(
-            "{:0x} {:?} {:?} {:?} ",
-            self.pc,
-            op_code,
-            addressing_mode,
-            register,
-        );
-            }
-        }
+        // match op_code {
+        //     OpCode::JMP => {}
+        //     _ => {
+        //         println!(
+        //     "{:0x} {:?} {:?} {:?} ",
+        //     self.pc,
+        //     op_code,
+        //     addressing_mode,
+        //     register,
+        // );
+        //     }
+        // }
 
 
         // #[cfg(not(test))]
