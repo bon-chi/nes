@@ -121,6 +121,9 @@ impl Ppu2 {
                 (self.get_pattern_value() as u16),
         );
         let color = self.v_ram.lock().unwrap().get_color2(idx);
+        if idx != 15 {
+            println!("cycle: {}, line: {}, color_idx: {}", cycle, line, idx);
+        }
         self.shift_registers();
         color
     }
@@ -192,11 +195,15 @@ impl Ppu2 {
                                 if (cycle % 8) == 0 {
                                     // load tile bit
                                     let flag = (cycle == 256);
-                                    let address = self.v_ram_address_register
-                                        .lock()
-                                        .unwrap()
-                                        .fetch_vram_address(flag);
-                                    let pattern_num = self.v_ram.lock().unwrap().fetch8(0x2000 + cycle as u16);
+                                    // let (fine_y_scroll, name_table_num, y_panel_pos, x_panel_pos) = self.v_ram_address_register
+                                    //     .lock()
+                                    //     .unwrap()
+                                    //     .fetch_vram_address(flag);
+                                    let pattern_num = self.v_ram.lock().unwrap().fetch8(
+                                        0x2000 + (cycle as u16 - 1) / 8 +
+                                            line as u16 * 8,
+                                    );
+                                    // let pattern_num = self.v_ram.lock().unwrap().fetch8(0x2000 + cycle as u16);
                                     // println!(
                                     //     "cycle: {}, line: {}, pattern_num: {}, vram: {}",
                                     //     cycle,
@@ -217,18 +224,35 @@ impl Ppu2 {
                                         0x0000 + 16 * pattern_num as u16 + (line % 8) as u16 +
                                             8,
                                     );
+                                    self.attr_value_register = self.v_ram.lock().unwrap().fetch8(
+                                        ((cycle as u16 / 4) +
+                                             (line as u16 / 2) * 8),
+                                    );
                                 }
                             }
-                            if cycle > 256 {
-                                // let pattern_num = self.v_ram.lock().unwrap().fetch8(0x2000 + cycle as u16);
-                                // self.pattern_high_value_register.1 = self.v_ram.lock().unwrap().fetch8(
-                                //     0x0000 + 16 * pattern_num as u16 +
-                                //         (line % 8) as u16,
-                                // );
-                                // self.pattern_low_value_register.1 = self.v_ram.lock().unwrap().fetch8(
-                                //     0x0000 + 16 * pattern_num as u16 + (line % 8) as u16 +
-                                //         8,
-                                // );
+                            if cycle == 257 {
+                                let pattern_num = self.v_ram.lock().unwrap().fetch8(
+                                    0x2000 + (line + 1) as u16 * 8,
+                                );
+                                self.pattern_high_value_register.1 = self.v_ram.lock().unwrap().fetch8(
+                                    0x0000 + 16 * pattern_num as u16 +
+                                        (line % 8) as u16,
+                                );
+                                self.pattern_low_value_register.1 = self.v_ram.lock().unwrap().fetch8(
+                                    0x0000 + 16 * pattern_num as u16 + (line % 8) as u16 +
+                                        8,
+                                );
+                                let pattern_num = self.v_ram.lock().unwrap().fetch8(
+                                    0x2000 + (line + 1) as u16 * 8 + 1,
+                                );
+                                self.pattern_high_value_register.0 = self.v_ram.lock().unwrap().fetch8(
+                                    0x0000 + 16 * pattern_num as u16 +
+                                        (line % 8) as u16,
+                                );
+                                self.pattern_low_value_register.0 = self.v_ram.lock().unwrap().fetch8(
+                                    0x0000 + 16 * pattern_num as u16 + (line % 8) as u16 +
+                                        8,
+                                );
                             }
                             if line >= 240 {}
                         }
