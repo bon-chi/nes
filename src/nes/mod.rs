@@ -60,6 +60,7 @@ impl Nes {
         let (txk, rxk) = mpsc::channel::<Option<Key>>();
         let mut cpu = self.cpu;
         let t = thread::spawn(move || { cpu.run(tx, rxk); });
+        thread::sleep_ms(5000);
         self.ppu.dump();
         self.ppu.run3(txk, rx);
     }

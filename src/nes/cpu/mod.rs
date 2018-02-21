@@ -95,13 +95,20 @@ impl Cpu {
             }
         };
         // #[cfg(feature="debug_log")]
-        // println!(
-        //     "{:0x} {:?} {:?} {:?} ",
-        //     self.pc,
-        //     op_code,
-        //     addressing_mode,
-        //     register,
-        // );
+        match op_code {
+            OpCode::JMP => {}
+            _ => {
+                println!(
+            "{:0x} {:?} {:?} {:?} ",
+            self.pc,
+            op_code,
+            addressing_mode,
+            register,
+        );
+            }
+        }
+
+
         // #[cfg(not(test))]
         // println!("debughoge");
 
@@ -572,6 +579,11 @@ impl PrgRam {
             }
             0x2005 => {
                 match self.first_or_second_write_toggle.lock().unwrap().is_true() {
+                    false => {
+                        *self.fine_x_scroll.lock().unwrap() = data & 0b00000111;
+                        let x = (data >> 3) * 0b00011111;
+                        self.temporary_v_ram_address.lock().unwrap().set_x_idx(x);
+                    }
                     true => {
                         let fine_y_scroll = data & 0b00000111;
                         let coarse_y_scroll = (data >> 3) & 0b00011111;
@@ -583,63 +595,28 @@ impl PrgRam {
                             coarse_y_scroll,
                         );
                     }
-                    false => {
-                        *self.fine_x_scroll.lock().unwrap() = data & 0b00000111;
-                        let x = (data >> 3) * 0b00011111;
-                        self.temporary_v_ram_address.lock().unwrap().set_x_idx(x);
-                    }
-
                 }
                 self.first_or_second_write_toggle.lock().unwrap().toggle();
             }
             0x2006 => {
                 match self.first_or_second_write_toggle.lock().unwrap().is_true() {
-                    true => {
-                        let (_, _, y, _) = self.temporary_v_ram_address
-                            .lock()
-                            .unwrap()
-                            .get_vram_address();
-                        let x = data & 0b00011111;
-                        let y = y & ((data >> 5) & 0b00000111);
-                        self.temporary_v_ram_address.lock().unwrap().set_y_idx(y);
-                        self.temporary_v_ram_address.lock().unwrap().set_x_idx(x);
-                        let (y_scroll, name_table, y, x) = self.temporary_v_ram_address
-                            .lock()
-                            .unwrap()
-                            .get_vram_address();
-                        println!(
-                            "0x:2006_1: {:0x},{:0x},{:0x},{:0x}",
-                            y_scroll,
-                            name_table,
-                            y,
-                            x
-                        );
-                        self.v_ram_address_register
-                            .lock()
-                            .unwrap()
-                            .set_y_offset_from_scanline(y_scroll);
-                        self.v_ram_address_register.lock().unwrap().set_name_table(
-                            name_table,
-                        );
-                        self.v_ram_address_register.lock().unwrap().set_y_idx(y);
-                        self.v_ram_address_register.lock().unwrap().set_x_idx(x);
-                        // println!("0x:2006_1_dump: {}", self.v_ram)
-                        // self.first_or_second_write_toggle.lock().unwrap().set(false);
-                    }
                     false => {
-                        let (_, name_table, y, _) = self.temporary_v_ram_address
+                        let (_, _, y, _x) = self.temporary_v_ram_address
                             .lock()
                             .unwrap()
                             .get_vram_address();
-                        let y_scroll = data >> 4 & 0b00000011;
-                        let name_table = data >> 2 & 0b00000011;
-                        let y = y & ((data & 0b00000011) << 3);
-                        println!(
-                            "0x:2006_0: {:0x},{:0x},{:0x}",
-                            y_scroll,
-                            name_table,
-                            y,
-                        );
+                        println!("y: {},x:{}, data: {}", y, _x, data);
+                        let y_scroll = (data >> 4) & 0b00000011;
+                        let name_table = (data >> 2) & 0b00000011;
+                        // let y = y | ((data & 0b00000011) << 3);
+                        // let y = (((y >> 3) | (data & 0b00000011)) << 3) + (y & 0b00000111);
+                        let y = ((data & 0b00000011) << 3) + (y & 0b00000111);
+                        // println!(
+                        //     "0x:2006_0: {:0x},{:0x},{:0x}",
+                        //     y_scroll,
+                        //     name_table,
+                        //     y,
+                        // );
                         self.temporary_v_ram_address
                             .lock()
                             .unwrap()
@@ -649,6 +626,50 @@ impl PrgRam {
                             .unwrap()
                             .set_name_table(name_table);
                         self.temporary_v_ram_address.lock().unwrap().set_y_idx(y);
+                        // println!(
+                        //     "0x:2006_0_temporary_dump: {:0x}",
+                        //     self.temporary_v_ram_address.lock().unwrap().dump()
+                        // );
+                    }
+                    true => {
+                        let (_, _, y, _) = self.temporary_v_ram_address
+                            .lock()
+                            .unwrap()
+                            .get_vram_address();
+                        let x = data & 0b00011111;
+                        // let y = y | ((data >> 5) & 0b00000111);
+                        let y = (y & 0b11000) + ((data >> 5) & 0b00000111);
+                        self.temporary_v_ram_address.lock().unwrap().set_y_idx(y);
+                        self.temporary_v_ram_address.lock().unwrap().set_x_idx(x);
+                        // println!(
+                        //     "0x:2006_1_temporary_dump: {:0x}",
+                        //     self.temporary_v_ram_address.lock().unwrap().dump()
+                        // );
+                        let (y_scroll, name_table, y, x) = self.temporary_v_ram_address
+                            .lock()
+                            .unwrap()
+                            .get_vram_address();
+                        // println!(
+                        //     "0x:2006_1: {:0x},{:0x},{:0x},{:0x}",
+                        //     y_scroll,
+                        //     name_table,
+                        //     y,
+                        //     x
+                        // );
+                        self.v_ram_address_register
+                            .lock()
+                            .unwrap()
+                            .set_y_offset_from_scanline(y_scroll);
+                        self.v_ram_address_register.lock().unwrap().set_name_table(
+                            name_table,
+                        );
+                        self.v_ram_address_register.lock().unwrap().set_y_idx(y);
+                        self.v_ram_address_register.lock().unwrap().set_x_idx(x);
+                        // println!(
+                        //     "0x:2006_1_v_dump: {:0x}",
+                        //     self.v_ram_address_register.lock().unwrap().dump()
+                        // );
+                        // self.first_or_second_write_toggle.lock().unwrap().set(false);
                     }
                 }
                 self.first_or_second_write_toggle.lock().unwrap().toggle();

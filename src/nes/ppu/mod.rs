@@ -660,17 +660,17 @@ impl VRamAddressRegister {
         let y_scroll = (self.y_offset_from_scanline as u16) << 12;
         let name_table_num = (self.name_table_num as u16) << 10;
         let y = (self.y_idx as u16) << 5;
-        println!(
-            "{:0x}, {:0x}, {:0x}, {:0x}",
-            self.y_offset_from_scanline,
-            // y_scroll,
-            self.name_table_num,
-            // name_table_num,
-            self.y_idx,
-            // y,
-            self.x_idx as u16
-        );
-        y + name_table_num + y + (self.x_idx as u16)
+        // println!(
+        //     "{:0x}, {:0x}, {:0x}, {:0x}",
+        //     self.y_offset_from_scanline,
+        //     // y_scroll,
+        //     self.name_table_num,
+        //     // name_table_num,
+        //     self.y_idx,
+        //     // y,
+        //     self.x_idx as u16
+        // );
+        y_scroll + name_table_num + y + (self.x_idx as u16)
     }
 }
 
