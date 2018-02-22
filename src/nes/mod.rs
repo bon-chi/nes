@@ -29,7 +29,8 @@ impl Nes {
         let temporary_v_ram_address = Arc::new(Mutex::new(VRamAddressRegister::new()));
         let fine_x_scroll = Arc::new(Mutex::new(0));
         let first_or_second_write_toggle = Arc::new(Mutex::new(FirstOrSecondWriteToggle::new()));
-        let v_ram = Arc::new(Mutex::new(VRam::new()));
+        // let v_ram = Arc::new(Mutex::new(VRam::new()));
+        let v_ram = Arc::new(Mutex::new(VRam::load(&path)));
         let prg_ram = Arc::new(Mutex::new(
             (PrgRam::load(
                 &path,

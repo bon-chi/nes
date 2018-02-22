@@ -7,7 +7,10 @@ extern crate piston_window;
 extern crate sdl2_window;
 extern crate image as im;
 
+
 use std::fs::File;
+use std::path::Path;
+use std::io::Read;
 use std::io::{BufWriter, Write};
 use nes::ppu::piston_window::Context;
 use nes::piston_window::Graphics;
@@ -26,6 +29,7 @@ use self::sdl2_window::Sdl2Window;
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{Sender, Receiver};
 use chrono::prelude::*;
+use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian, LittleEndian};
 
 pub struct Ppu2 {
     //sprite
@@ -121,8 +125,15 @@ impl Ppu2 {
                 (self.get_pattern_value() as u16),
         );
         let color = self.v_ram.lock().unwrap().get_color2(idx);
-        if idx != 15 {
-            println!("cycle: {}, line: {}, color_idx: {}", cycle, line, idx);
+        if line >= 112 && line <= 120 {
+            // println!(
+            //     "cycle: {}, line: {}, reg_high: {:0x}, reg_low: {:0x},  color_idx: {:0x}",
+            //     cycle,
+            //     line,
+            //     self.pattern_high_value_register.1,
+            //     self.pattern_low_value_register.1,
+            //     idx
+            // );
         }
         self.shift_registers();
         color
@@ -200,8 +211,9 @@ impl Ppu2 {
                                     //     .unwrap()
                                     //     .fetch_vram_address(flag);
                                     let pattern_num = self.v_ram.lock().unwrap().fetch8(
-                                        0x2000 + (cycle as u16 - 1) / 8 +
-                                            line as u16 * 8,
+                                            0x2000 + (cycle as u16 ) / 8 + ((line as u16 / 8)*32),
+                                        // 0x2000 + (cycle as u16 - 1) / 8 +
+                                        //     line as u16 * 8,
                                     );
                                     // let pattern_num = self.v_ram.lock().unwrap().fetch8(0x2000 + cycle as u16);
                                     // println!(
@@ -228,18 +240,32 @@ impl Ppu2 {
                                         ((cycle as u16 / 4) +
                                              (line as u16 / 2) * 8),
                                     );
+                                    // if line >= 112 && line <= 120{
+                                    //     println!(
+                                    //         "line: {},cycle: {}, pattern_num0: {:0x}, pattern_address: {:0x}, high: {:0x} {:0x}, low: {:0x}, {:0x}",
+                                    //         line,
+                                    //         cycle,
+                                    //         pattern_num,
+                                    //         0x2000 + (cycle as u16 ) / 8 + ((line as u16 / 8)*32),
+                                    //         self.pattern_high_value_register.1,
+                                    //         self.pattern_high_value_register.0,
+                                    //         self.pattern_low_value_register.1,
+                                    //         self.pattern_low_value_register.0
+                                    //     );
+                                    // }
                                 }
                             }
                             if cycle == 257 {
-                                let pattern_num = self.v_ram.lock().unwrap().fetch8(
-                                    0x2000 + (line + 1) as u16 * 8,
+                                let pattern_num0 = self.v_ram.lock().unwrap().fetch8(
+                                    0x2000 +
+                                        ((line + 1) as u16 / 8) * 32,
                                 );
                                 self.pattern_high_value_register.1 = self.v_ram.lock().unwrap().fetch8(
-                                    0x0000 + 16 * pattern_num as u16 +
+                                    0x0000 + 16 * pattern_num0 as u16 +
                                         (line % 8) as u16,
                                 );
                                 self.pattern_low_value_register.1 = self.v_ram.lock().unwrap().fetch8(
-                                    0x0000 + 16 * pattern_num as u16 + (line % 8) as u16 +
+                                    0x0000 + 16 * pattern_num0 as u16 + (line % 8) as u16 +
                                         8,
                                 );
                                 let pattern_num = self.v_ram.lock().unwrap().fetch8(
@@ -253,6 +279,16 @@ impl Ppu2 {
                                     0x0000 + 16 * pattern_num as u16 + (line % 8) as u16 +
                                         8,
                                 );
+                                // println!(
+                                //     "line: {},pattern_num0: {:0x}, pattern_address: {:0x}, high: {:0x} {:0x}, low: {:0x}, {:0x}",
+                                //     line,
+                                //     pattern_num0,
+                                //     0x2000 + ((line + 1) as u16 / 8) * 32,
+                                //     self.pattern_high_value_register.1,
+                                //     self.pattern_high_value_register.0,
+                                //     self.pattern_low_value_register.1,
+                                //     self.pattern_low_value_register.0
+                                // );
                             }
                             if line >= 240 {}
                         }
@@ -558,15 +594,101 @@ impl VRam {
     pub fn new() -> Self {
         VRam([0; 0xFFFF])
     }
+    pub fn load(path: &Path) -> VRam {
+        let mut file = match File::open(path) {
+            Ok(file) => file,
+            Err(why) => panic!("{}: path is {:?}", why, path),
+        };
+        // let mut nes_buffer: [u8; 16] = [0; 16];
+        let mut nes_buffer: Vec<u8> = Vec::new();
+        let result = file.read_to_end(&mut nes_buffer).unwrap();
+        let nes_header_size = 0x0010;
+
+        let prg_rom_banks_num = nes_buffer[4];
+        let prg_rom_start = nes_header_size;
+        let prg_rom_end = prg_rom_start + prg_rom_banks_num as u64 * 0x4000 - 1;
+
+        let chr_rom_banks_num = nes_buffer[5];
+        let chr_rom_start = prg_rom_end + 1;
+        let chr_rom_end = chr_rom_start + chr_rom_banks_num as u64 * 0x2000 - 1;
+
+        // let mut prg_rom: Vec<u8> = Vec::new();
+        // for i in prg_rom_start..(prg_rom_end + 1) {
+        //     prg_rom.push(nes_buffer[i as usize]);
+        // }
+
+        let mut chr_rom: Vec<u8> = Vec::new();
+        for i in chr_rom_start..(chr_rom_end + 1) {
+            chr_rom.push(nes_buffer[i as usize]);
+        }
+
+        let mut memory: [u8; 0xFFFF] = [0; 0xFFFF];
+
+        // let memory_idx_low = 0x8000;
+        // let memory_idx_high = 0xC000;
+        // let mut prg_rom_idx = 0;
+        // for memory_idx in memory_idx_low..memory_idx_high {
+        //     memory[memory_idx] = prg_rom[prg_rom_idx];
+        //     prg_rom_idx += 1;
+        // }
+        let mut i = 0;
+        for chr_rom_data in chr_rom.iter() {
+            memory[i] = *chr_rom_data;
+            // println!(
+            //     "0 address: {:0x}, data: {:0x}, {:0x}",
+            //     i,
+            //     *chr_rom_data,
+            //     memory[i]
+            // );
+            i += 1;
+        }
+
+
+        // match chr_rom_banks_num {
+        //     1 => {
+        //         prg_rom_idx = 0;
+        //         for memory_idx in memory_idx_low..memory_idx_high {
+        //             memory[memory_idx] = prg_rom[prg_rom_idx];
+        //             prg_rom_idx += 1;
+        //         }
+        //     }
+        //     2...255 => {
+        //         let memory_idx_end = 0x10000;
+        //         for memory_idx in memory_idx_high..memory_idx_end {
+        //             memory[memory_idx] = prg_rom[prg_rom_idx];
+        //             prg_rom_idx += 1;
+        //         }
+        //     }
+        //     _ => {}
+        // }
+
+        // println!("{:0x}", memory[0x415]);
+        let vram = VRam(memory);
+        vram.dump();
+        // println!("{:0x}", vram.0[0x415]);
+        vram
+    }
 
     pub fn dump(&self) {
         let dt = Local::now().format("%Y-%m-%d_%H:%M:%S").to_string();
         let dt = "ppu_ram";
         // println!("{:?}", dt);
         let mut f = BufWriter::new(File::create(dt).unwrap());
+        // let mut f = File::create(dt).unwrap();
+        let mut i = 0;
         for v in self.0.iter() {
             f.write(&[*v]).unwrap();
-            // println!("{:?}", &[*v]);
+            // f.write(&[0x80 as u8]).unwrap();
+            // println!("write : {:?}", f.write(b"Ĩ"));
+            // println!("write : {:?}", f.write_u16::<LittleEndian>(0x80));
+            // f.write(&[i as u8]);
+            // let v = vec![i];
+            // f.write_u8(i);
+            // f.write(v);
+            if i >= 0x400 && i <= 0x420 {
+                // println!("address: {:0x}, data {:0x}, {:?}", i, *v, &[*v]);
+            }
+            i += 1;
         }
     }
     fn get_name_table_value(&self, table_num: u8, index: u16) -> u8 {
