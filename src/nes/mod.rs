@@ -27,6 +27,9 @@ impl Nes {
         let cpu = Cpu::new(prg_ram);
         let ppu = Ppu::new(v_ram.clone());
 
+        #[cfg(debug = "dump")] cpu.dump();
+        ppu.dump();
+
         Nes { cpu, ppu }
     }
 

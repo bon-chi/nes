@@ -11,6 +11,11 @@ impl Cpu {
     pub fn new(prg_ram: PrgRam) -> Cpu {
         Cpu { prg_ram }
     }
+
+    #[allow(dead_code)]
+    pub fn dump(&self) {
+        self.prg_ram.dump();
+    }
 }
 
 pub struct PrgRam {
@@ -21,5 +26,13 @@ pub struct PrgRam {
 impl PrgRam {
     pub fn new(memory: Box<[u8; 0xFFFF]>, v_ram: Arc<Mutex<VRam>>) -> PrgRam {
         PrgRam { memory, v_ram }
+    }
+
+    pub fn dump(&self) {
+        let dump_file = "prg_ram.dump";
+        let mut f = BufWriter::new(File::create(dump_file).unwrap());
+        for v in self.memory.iter() {
+            f.write(&[*v]).unwrap();
+        }
     }
 }

@@ -3,4 +3,7 @@ name = "nes"
 version = "0.1.0"
 authors = ["Koji Ota"]
 
+[features]
+dump = []
+
 [dependencies]
