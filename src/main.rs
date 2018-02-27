@@ -1,3 +1,7 @@
+extern crate nes;
+
+use nes::nes::Nes;
+
 fn main() {
-    println!("Hello, world!");
+    let _nes = Nes::new("sample1.nes");
 }
