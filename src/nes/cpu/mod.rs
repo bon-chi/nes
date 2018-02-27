@@ -19,12 +19,12 @@ impl Cpu {
 }
 
 pub struct PrgRam {
-    memory: Box<[u8; 0xFFFF]>,
+    memory: Box<[u8; 0x10000]>,
     v_ram: Arc<Mutex<VRam>>,
 }
 
 impl PrgRam {
-    pub fn new(memory: Box<[u8; 0xFFFF]>, v_ram: Arc<Mutex<VRam>>) -> PrgRam {
+    pub fn new(memory: Box<[u8; 0x10000]>, v_ram: Arc<Mutex<VRam>>) -> PrgRam {
         PrgRam { memory, v_ram }
     }
 

@@ -17,9 +17,10 @@ impl Ppu {
     }
 }
 
-pub struct VRam(Box<[u8; 0xFFFF]>);
+pub struct VRam(Box<[u8; 0x10000]>);
+
 impl VRam {
-    pub fn new(memory: Box<[u8; 0xFFFF]>) -> VRam {
+    pub fn new(memory: Box<[u8; 0x10000]>) -> VRam {
         VRam(memory)
     }
 

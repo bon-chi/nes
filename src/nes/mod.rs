@@ -19,6 +19,10 @@ impl Nes {
     const SIZE_OF_PRG_ROM_UNIT: u16 = 0x4000;
     const SIZE_OF_CHR_ROM_UNIT: u16 = 0x2000;
 
+    const RAM_SIZE: usize = 0x10000;
+    const PRG_ROM_LOWER_IDX: usize = 0x8000;
+    const PRG_ROM_UPPER_IDX: usize = 0xC000;
+
     pub fn new(casette_name: &str) -> Nes {
         let path_string = format!("cassette/{}", String::from(casette_name));
         let path = Path::new(&path_string);
@@ -51,47 +55,41 @@ impl Nes {
         let chr_rom_start = prg_rom_end + 1;
         let chr_rom_end = chr_rom_start + chr_rom_banks_num as u16 * Self::SIZE_OF_CHR_ROM_UNIT - 1;
 
+        // set prg_ram_memory
         let mut prg_rom: Vec<u8> = Vec::new();
         prg_rom.extend_from_slice(
             &i_nes_data[(prg_rom_start as usize)..(prg_rom_end as usize + 1)],
         );
 
-        let mut chr_rom: Vec<u8> = Vec::new();
-        chr_rom.extend_from_slice(
-            &i_nes_data[(chr_rom_start as usize)..(chr_rom_end as usize + 1)],
-        );
+        let mut prg_ram_memory: Box<[u8; Self::RAM_SIZE]> = Box::new([0; Self::RAM_SIZE]);
+        prg_ram_memory[Self::PRG_ROM_LOWER_IDX..Self::PRG_ROM_UPPER_IDX]
+            .clone_from_slice(&prg_rom[..(Self::SIZE_OF_PRG_ROM_UNIT as usize)]);
 
-        let mut prg_ram_memory: Box<[u8; 0xFFFF]> = Box::new([0; 0xFFFF]);
-        let memory_idx_low = 0x8000;
-        let memory_idx_high = 0xC000;
-        let mut prg_rom_idx = 0;
-        for memory_idx in memory_idx_low..memory_idx_high {
-            prg_ram_memory[memory_idx] = prg_rom[prg_rom_idx];
-            prg_rom_idx += 1;
-        }
-
-        match chr_rom_banks_num {
+        match i_nes_data[Self::COUNT_OF_PRG_ROM_UNITS_INDEX as usize] {
             1 => {
-                prg_rom_idx = 0;
-                for memory_idx in memory_idx_low..memory_idx_high {
-                    prg_ram_memory[memory_idx] = prg_rom[prg_rom_idx];
-                    prg_rom_idx += 1;
-                }
+                prg_ram_memory[Self::PRG_ROM_UPPER_IDX..].clone_from_slice(
+                    &prg_rom
+                        [..(Self::SIZE_OF_PRG_ROM_UNIT as usize)],
+                );
+
             }
             2...255 => {
-                let memory_idx_end = 0x10000;
-                for memory_idx in memory_idx_high..memory_idx_end {
-                    prg_ram_memory[memory_idx] = prg_rom[prg_rom_idx];
-                    prg_rom_idx += 1;
-                }
+                prg_ram_memory[Self::PRG_ROM_UPPER_IDX..].clone_from_slice(
+                    &prg_rom[(Self::SIZE_OF_PRG_ROM_UNIT as usize)..
+                                 (Self::SIZE_OF_PRG_ROM_UNIT as usize *
+                                      2)],
+                );
             }
             _ => {}
         }
 
-        let mut v_ram_memory: Box<[u8; 0xFFFF]> = Box::new([0; 0xFFFF]);
-        for (i, chr_rom_data) in chr_rom.iter().enumerate() {
-            v_ram_memory[i] = *chr_rom_data;
-        }
+        // set v_ram_memory
+        let mut v_ram_memory: Box<[u8; Self::RAM_SIZE]> = Box::new([0; Self::RAM_SIZE]);
+        v_ram_memory[..(chr_rom_end as usize + 1 - chr_rom_start as usize)].clone_from_slice(
+            &i_nes_data[(chr_rom_start as usize)..
+                            (chr_rom_end as usize +
+                                 1)],
+        );
 
         let v_ram = Arc::new(Mutex::new(VRam::new(v_ram_memory)));
         let prg_ram = PrgRam::new(prg_ram_memory, v_ram.clone());
