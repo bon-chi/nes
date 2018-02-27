@@ -2,6 +2,7 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::sync::{Arc, Mutex};
 
+/// [PPU](http://wiki.nesdev.com/w/index.php/PPU) is short for Picture Processing Unit
 pub struct Ppu {
     v_ram: Arc<Mutex<VRam>>,
 }
@@ -17,6 +18,8 @@ impl Ppu {
     }
 }
 
+/// [PPU memory](http://wiki.nesdev.com/w/index.php/PPU_memory_map)
+/// RAM is 2KB.
 pub struct VRam(Box<[u8; 0x10000]>);
 
 impl VRam {

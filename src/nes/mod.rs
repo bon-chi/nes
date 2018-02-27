@@ -37,6 +37,7 @@ impl Nes {
         Nes { cpu, ppu }
     }
 
+    /// load [iNES](http://wiki.nesdev.com/w/index.php/INES)
     fn load_ram(path: &Path) -> (PrgRam, Arc<Mutex<VRam>>) {
         let file = match File::open(path) {
             Ok(file) => file,

@@ -3,6 +3,7 @@ use std::io::{BufWriter, Write};
 use std::sync::{Arc, Mutex};
 use nes::ppu::VRam;
 
+/// [CPU](http://wiki.nesdev.com/w/index.php/CPU)
 pub struct Cpu {
     prg_ram: PrgRam,
 }
@@ -18,6 +19,8 @@ impl Cpu {
     }
 }
 
+/// [CPU memory](http://wiki.nesdev.com/w/index.php/CPU_memory_map)
+/// RAM is 2KB.
 pub struct PrgRam {
     memory: Box<[u8; 0x10000]>,
     v_ram: Arc<Mutex<VRam>>,
