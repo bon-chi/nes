@@ -25,23 +25,12 @@ impl Cpu {
     pub fn run(mut self) -> Result<()> {
         loop {
             let instruction = self.fetch_instruction();
-            let (op_code, addressing_mode, register) = Self::parse_instruction(instruction)
-                .map_err(|e| {
-                    format!(
-                        "{}, at: {:0x}, cpu_dump: {:?}",
-                        e.description(),
-                        self.pc,
-                        self
-                    )
-                })?;
+            let (op_code, addressing_mode, register) = Self::parse_instruction(instruction).map_err(|e| {
+                format!("{}, at: {:0x}, cpu_dump: {:?}", e.description(), self.pc, self)
+            })?;
             self.increment_pc();
             let operand = self.get_operand(addressing_mode, register).map_err(|e| {
-                format!(
-                    "{}, at: {:0x}, cpu_dump: {:?}",
-                    e.description(),
-                    self.pc,
-                    self
-                )
+                format!("{}, at: {:0x}, cpu_dump: {:?}", e.description(), self.pc, self)
             })?;
         }
         Ok(())
@@ -51,12 +40,8 @@ impl Cpu {
         self.prg_ram_value()
     }
 
-    fn parse_instruction(
-        instruction: u8,
-    ) -> Result<(OpCode, AddressingMode, Option<IndexRegister>)> {
-        let (op_code, addressing_mode, register): (OpCode,
-                                                   AddressingMode,
-                                                   Option<IndexRegister>) = match instruction {
+    fn parse_instruction(instruction: u8) -> Result<(OpCode, AddressingMode, Option<IndexRegister>)> {
+        let (op_code, addressing_mode, register): (OpCode, AddressingMode, Option<IndexRegister>) = match instruction {
             0x78 => (OpCode::SEI, AddressingMode::Implied, None),
             _ => Err(format!("unknown instruction: {:0x}", instruction,))?,
         };
