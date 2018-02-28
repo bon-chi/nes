@@ -48,9 +48,7 @@ impl Nes {
         let _ = buffer.read_to_end(&mut i_nes_data).unwrap();
 
         let prg_rom_start = Self::I_NES_HEADER_SIZE;
-        let prg_rom_end = prg_rom_start +
-            i_nes_data[Self::COUNT_OF_PRG_ROM_UNITS_INDEX as usize] as u16 * Self::SIZE_OF_PRG_ROM_UNIT -
-            1;
+        let prg_rom_end = prg_rom_start + i_nes_data[Self::COUNT_OF_PRG_ROM_UNITS_INDEX as usize] as u16 * Self::SIZE_OF_PRG_ROM_UNIT - 1;
 
         let chr_rom_banks_num = i_nes_data[Self::COUNT_OF_CHR_ROM_UNITS_INDEX as usize];
         let chr_rom_start = prg_rom_end + 1;
@@ -61,21 +59,17 @@ impl Nes {
         prg_rom.extend_from_slice(&i_nes_data[(prg_rom_start as usize)..(prg_rom_end as usize + 1)]);
 
         let mut prg_ram_memory: Box<[u8; Self::RAM_SIZE]> = Box::new([0; Self::RAM_SIZE]);
-        prg_ram_memory[Self::PRG_ROM_LOWER_IDX..Self::PRG_ROM_UPPER_IDX]
-            .clone_from_slice(&prg_rom[..(Self::SIZE_OF_PRG_ROM_UNIT as usize)]);
+        prg_ram_memory[Self::PRG_ROM_LOWER_IDX..Self::PRG_ROM_UPPER_IDX].clone_from_slice(&prg_rom[..(Self::SIZE_OF_PRG_ROM_UNIT as usize)]);
 
         match i_nes_data[Self::COUNT_OF_PRG_ROM_UNITS_INDEX as usize] {
             1 => {
-                prg_ram_memory[Self::PRG_ROM_UPPER_IDX..].clone_from_slice(
-                    &prg_rom
-                        [..(Self::SIZE_OF_PRG_ROM_UNIT as usize)],
-                );
+                prg_ram_memory[Self::PRG_ROM_UPPER_IDX..].clone_from_slice(&prg_rom[..(Self::SIZE_OF_PRG_ROM_UNIT as usize)]);
 
             }
             2...255 => {
                 prg_ram_memory[Self::PRG_ROM_UPPER_IDX..].clone_from_slice(
-                    &prg_rom[(Self::SIZE_OF_PRG_ROM_UNIT as usize)..
-                                 (Self::SIZE_OF_PRG_ROM_UNIT as usize * 2)],
+                    &prg_rom
+                        [(Self::SIZE_OF_PRG_ROM_UNIT as usize)..(Self::SIZE_OF_PRG_ROM_UNIT as usize * 2)],
                 );
             }
             _ => {}

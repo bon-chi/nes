@@ -56,11 +56,7 @@ impl Cpu {
         self.pc = self.pc + 1;
     }
 
-    fn get_operand(
-        &mut self,
-        addressing_mode: AddressingMode,
-        register: Option<IndexRegister>,
-    ) -> Result<Option<Operand>> {
+    fn get_operand(&mut self, addressing_mode: AddressingMode, register: Option<IndexRegister>) -> Result<Option<Operand>> {
         let operand: Option<Operand> = match addressing_mode {
             AddressingMode::Implied => None,
             _ => Err(format!("invalid AddressingMode: {:?}", addressing_mode))?,
