@@ -97,4 +97,18 @@ impl Nes {
 
         (prg_ram, v_ram)
     }
+
+    pub fn run(mut self) {
+        self.cpu.run();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn run_test() {
+        let mut nes = Nes::new("sample1.nes");
+        nes.run();
+    }
 }

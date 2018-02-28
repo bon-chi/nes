@@ -5,5 +5,7 @@ authors = ["Koji Ota"]
 
 [features]
 dump = []
+print_cpu_instruction = []
 
 [dependencies]
+error-chain = "0.11.0"
