@@ -99,7 +99,9 @@ impl Nes {
     }
 
     pub fn run(mut self) {
-        self.cpu.run();
+        if let Err(message) = self.cpu.run() {
+            panic!("{}", message);
+        }
     }
 }
 

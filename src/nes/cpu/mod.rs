@@ -22,23 +22,29 @@ impl Cpu {
         }
     }
 
-    pub fn run(mut self) {
+    pub fn run(mut self) -> Result<()> {
         loop {
             let instruction = self.fetch_instruction();
-            match Self::parse_instruction(instruction) {
-                Ok((op_code, addressing_mode, register)) => {
-                    self.increment_pc();
-                }
-                Err(error_message) => {
-                    panic!(
+            let (op_code, addressing_mode, register) = Self::parse_instruction(instruction)
+                .map_err(|e| {
+                    format!(
                         "{}, at: {:0x}, cpu_dump: {:?}",
-                        error_message,
+                        e.description(),
                         self.pc,
                         self
-                    );
-                }
-            }
+                    )
+                })?;
+            self.increment_pc();
+            let operand = self.get_operand(addressing_mode, register).map_err(|e| {
+                format!(
+                    "{}, at: {:0x}, cpu_dump: {:?}",
+                    e.description(),
+                    self.pc,
+                    self
+                )
+            })?;
         }
+        Ok(())
     }
 
     fn fetch_instruction(&self) -> u8 {
@@ -51,7 +57,7 @@ impl Cpu {
         let (op_code, addressing_mode, register): (OpCode,
                                                    AddressingMode,
                                                    Option<IndexRegister>) = match instruction {
-
+            0x78 => (OpCode::SEI, AddressingMode::Implied, None),
             _ => Err(format!("unknown instruction: {:0x}", instruction,))?,
         };
         Ok((op_code, addressing_mode, register))
@@ -63,6 +69,22 @@ impl Cpu {
 
     fn increment_pc(&mut self) {
         self.pc = self.pc + 1;
+    }
+
+    fn get_operand(
+        &mut self,
+        addressing_mode: AddressingMode,
+        register: Option<IndexRegister>,
+    ) -> Result<Option<Operand>> {
+        let operand: Option<Operand> = match addressing_mode {
+            AddressingMode::Implied => None,
+            _ => Err(format!("invalid AddressingMode: {:?}", addressing_mode))?,
+        };
+        Ok(operand)
+    }
+
+    pub fn get_pc(&self) -> u16 {
+        self.pc
     }
 
     #[allow(dead_code)]
@@ -183,4 +205,10 @@ enum AddressingMode {
 enum IndexRegister {
     X,
     Y,
+}
+
+#[derive(Debug)]
+enum Operand {
+    Value(u8),
+    Index(u16),
 }
