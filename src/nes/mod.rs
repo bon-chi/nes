@@ -10,6 +10,7 @@ use nes::ppu::{Ppu, VRam};
 
 pub struct Nes {
     cpu: Cpu,
+    #[allow(dead_code)]
     ppu: Ppu,
 }
 impl Nes {
@@ -86,7 +87,7 @@ impl Nes {
         (prg_ram, v_ram)
     }
 
-    pub fn run(mut self) {
+    pub fn run(self) {
         if let Err(message) = self.cpu.run() {
             panic!("{}", message);
         }
@@ -98,7 +99,7 @@ mod tests {
     use super::*;
     #[test]
     fn run_test() {
-        let mut nes = Nes::new("sample1.nes");
+        let nes = Nes::new("sample1.nes");
         nes.run();
     }
 }
