@@ -5,6 +5,7 @@ use std::fs::File;
 use std::path::Path;
 use std::io::{BufReader, Read};
 use std::sync::{Arc, Mutex};
+use std::thread;
 use nes::cpu::{Cpu, PrgRam};
 use nes::ppu::{Ppu, VRam};
 
@@ -88,9 +89,11 @@ impl Nes {
     }
 
     pub fn run(self) {
-        if let Err(message) = self.cpu.run() {
+        let cpu = self.cpu;
+        let _t = thread::spawn(move || if let Err(message) = cpu.run() {
             panic!("{}", message);
-        }
+        });
+        self.ppu.run();
     }
 }
 

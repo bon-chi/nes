@@ -12,6 +12,10 @@ impl Ppu {
         Ppu { v_ram }
     }
 
+    pub fn run(self) {
+        loop {}
+    }
+
     #[allow(dead_code)]
     pub fn dump(&self) {
         self.v_ram.lock().unwrap().dump();
