@@ -42,6 +42,8 @@ impl Cpu {
             let (op_code, addressing_mode, register) = Self::parse_instruction(instruction).map_err(|e| {
                 format!("{}, at: {:0x}, cpu_dump: {:?}", e.description(), self.pc, self)
             })?;
+            #[cfg(feature="print_cpu_instruction")]
+            println!("{:0x} {:?} {:?} {:?} ", self.pc, op_code, addressing_mode, register);
             self.increment_pc();
             let operand = self.get_operand(addressing_mode, register).map_err(|e| {
                 format!("{}, at: {:0x}, cpu_dump: {:?}", e.description(), self.pc, self)
