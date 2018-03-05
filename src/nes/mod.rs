@@ -7,7 +7,7 @@ use std::io::{BufReader, Read};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use nes::cpu::{Cpu, PrgRam};
-use nes::ppu::{Ppu, VRam};
+use nes::ppu::{Ppu, VRam, VRamAddressRegister, FineXScroll, FirstOrSecondWriteToggle};
 
 pub struct Nes {
     cpu: Cpu,
@@ -82,8 +82,21 @@ impl Nes {
         v_ram_memory[..(chr_rom_end as usize + 1 - chr_rom_start as usize)]
             .clone_from_slice(&i_nes_data[(chr_rom_start as usize)..(chr_rom_end as usize + 1)]);
 
+        // PPU internal registers
+        let v_ram_address_register = Arc::new(Mutex::new(VRamAddressRegister::new()));
+        let temporary_v_ram_address_register = Arc::new(Mutex::new(VRamAddressRegister::new()));
+        let fine_x_scroll = Arc::new(Mutex::new(FineXScroll::new(0)));
+        let first_or_second_write_toggle = Arc::new(Mutex::new(FirstOrSecondWriteToggle::new()));
+
         let v_ram = Arc::new(Mutex::new(VRam::new(v_ram_memory)));
-        let prg_ram = PrgRam::new(prg_ram_memory, v_ram.clone());
+        let prg_ram = PrgRam::new(
+            prg_ram_memory,
+            v_ram.clone(),
+            v_ram_address_register.clone(),
+            temporary_v_ram_address_register.clone(),
+            fine_x_scroll.clone(),
+            first_or_second_write_toggle.clone(),
+        );
 
         (prg_ram, v_ram)
     }
@@ -93,6 +106,7 @@ impl Nes {
         let _t = thread::spawn(move || if let Err(message) = cpu.run() {
             panic!("{}", message);
         });
+
         self.ppu.run();
     }
 }

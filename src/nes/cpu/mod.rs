@@ -3,7 +3,7 @@ use std::io::{BufWriter, Write};
 use std::sync::{Arc, Mutex};
 use std::fmt;
 use errors::*;
-use nes::ppu::VRam;
+use nes::ppu::{VRam, VRamAddressRegister, FineXScroll, FirstOrSecondWriteToggle};
 
 /// [CPU](http://wiki.nesdev.com/w/index.php/CPU)
 pub struct Cpu {
@@ -406,11 +406,36 @@ pub struct PrgRam {
     memory: Box<[u8; 0x10000]>,
     #[allow(dead_code)]
     v_ram: Arc<Mutex<VRam>>,
+
+    // PPU internal registers
+    v_ram_address_register: Arc<Mutex<VRamAddressRegister>>, // yyy, NN, YYYYY, XXXXX
+    temporary_v_ram_address_register: Arc<Mutex<VRamAddressRegister>>,
+    fine_x_scroll: Arc<Mutex<FineXScroll>>,
+    first_or_second_write_toggle: Arc<Mutex<FirstOrSecondWriteToggle>>,
 }
 
 impl PrgRam {
-    pub fn new(memory: Box<[u8; 0x10000]>, v_ram: Arc<Mutex<VRam>>) -> PrgRam {
-        PrgRam { memory, v_ram }
+    const PPU_CONTROL_REGISTER1: u16 = 0x2000;
+    const PPU_STATUS_REGISTER: u16 = 0x2002;
+    const V_RAM_ADDRESS_REGISTER1: u16 = 0x2005;
+    const V_RAM_ADDRESS_REGISTER2: u16 = 0x2006;
+    const V_RAM_IO_REGISTER: u16 = 0x2007;
+    pub fn new(
+        memory: Box<[u8; 0x10000]>,
+        v_ram: Arc<Mutex<VRam>>,
+        v_ram_address_register: Arc<Mutex<VRamAddressRegister>>,
+        temporary_v_ram_address_register: Arc<Mutex<VRamAddressRegister>>,
+        fine_x_scroll: Arc<Mutex<FineXScroll>>,
+        first_or_second_write_toggle: Arc<Mutex<FirstOrSecondWriteToggle>>,
+    ) -> PrgRam {
+        PrgRam {
+            memory,
+            v_ram,
+            v_ram_address_register,
+            temporary_v_ram_address_register,
+            fine_x_scroll,
+            first_or_second_write_toggle,
+        }
     }
 
     pub fn concat_addresses(address0: u8, address1: u8) -> u16 {
@@ -418,6 +443,77 @@ impl PrgRam {
     }
 
     fn set8(&mut self, address: u16, data: u8) {
+        match address {
+            Self::PPU_CONTROL_REGISTER1 => {
+                self.temporary_v_ram_address_register
+                    .lock()
+                    .unwrap()
+                    .set_name_table(data);
+            }
+            Self::PPU_STATUS_REGISTER => {
+                self.first_or_second_write_toggle.lock().unwrap().set(false);
+            }
+            Self::V_RAM_ADDRESS_REGISTER1 => {
+                match self.first_or_second_write_toggle.lock().unwrap().is_true() {
+                    false => {
+                        self.fine_x_scroll.lock().unwrap().set_value(
+                            data & 0b00000111,
+                        );
+                        self.temporary_v_ram_address_register
+                            .lock()
+                            .unwrap()
+                            .set_coarse_x_scroll((data >> 3) & 0b00011111);
+                    }
+                    true => {
+                        self.temporary_v_ram_address_register
+                            .lock()
+                            .unwrap()
+                            .set_fine_y_scroll(data & 0b00000111);
+                        self.temporary_v_ram_address_register
+                            .lock()
+                            .unwrap()
+                            .set_coarse_y_scroll(data >> 3);
+                    }
+
+                }
+                self.first_or_second_write_toggle.lock().unwrap().toggle();
+            }
+            Self::V_RAM_ADDRESS_REGISTER2 => {
+                match self.first_or_second_write_toggle.lock().unwrap().is_true() {
+                    false => {
+                        self.temporary_v_ram_address_register
+                            .lock()
+                            .unwrap()
+                            .set_upper_6bits(data & 0b00111111);
+                    }
+                    true => {
+                        self.temporary_v_ram_address_register
+                            .lock()
+                            .unwrap()
+                            .set_lower_8bits(data);
+                        let v = self.temporary_v_ram_address_register
+                            .lock()
+                            .unwrap()
+                            .value();
+                        self.v_ram_address_register
+                            .lock()
+                            .unwrap()
+                            .set_full_15bits(v);
+                    }
+                }
+                self.first_or_second_write_toggle.lock().unwrap().toggle();
+            }
+            Self::V_RAM_IO_REGISTER => {
+                let address = self.v_ram_address_register.lock().unwrap().value();
+                println!("address: {:0x}, data: {:0x}", address, data);
+                self.v_ram.lock().unwrap().set(address, data);
+                match ((self.memory[0x2000] >> 2) & 0b00000001) == 1 {
+                    true => self.v_ram_address_register.lock().unwrap().increment_y(),
+                    false => self.v_ram_address_register.lock().unwrap().increment_x(),
+                }
+            }
+            _ => {}
+        }
         self.memory[address as usize] = data;
     }
 
