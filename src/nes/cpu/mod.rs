@@ -448,7 +448,8 @@ impl PrgRam {
                 self.temporary_v_ram_address_register
                     .lock()
                     .unwrap()
-                    .set_name_table(data);
+                    .set_name_table(data & 0b00000011)
+                    .unwrap();
             }
             Self::PPU_STATUS_REGISTER => {
                 self.first_or_second_write_toggle.lock().unwrap().set(false);
@@ -456,23 +457,28 @@ impl PrgRam {
             Self::V_RAM_ADDRESS_REGISTER1 => {
                 match self.first_or_second_write_toggle.lock().unwrap().is_true() {
                     false => {
-                        self.fine_x_scroll.lock().unwrap().set_value(
-                            data & 0b00000111,
-                        );
+                        self.fine_x_scroll
+                            .lock()
+                            .unwrap()
+                            .set_value(data & 0b00000111)
+                            .unwrap();
                         self.temporary_v_ram_address_register
                             .lock()
                             .unwrap()
-                            .set_coarse_x_scroll((data >> 3) & 0b00011111);
+                            .set_coarse_x_scroll((data >> 3) & 0b00011111)
+                            .unwrap();
                     }
                     true => {
                         self.temporary_v_ram_address_register
                             .lock()
                             .unwrap()
-                            .set_fine_y_scroll(data & 0b00000111);
+                            .set_fine_y_scroll(data & 0b00000111)
+                            .unwrap();
                         self.temporary_v_ram_address_register
                             .lock()
                             .unwrap()
-                            .set_coarse_y_scroll(data >> 3);
+                            .set_coarse_y_scroll(data >> 3)
+                            .unwrap();
                     }
 
                 }
@@ -484,7 +490,8 @@ impl PrgRam {
                         self.temporary_v_ram_address_register
                             .lock()
                             .unwrap()
-                            .set_upper_6bits(data & 0b00111111);
+                            .set_upper_6bits(data & 0b00111111)
+                            .unwrap();
                     }
                     true => {
                         self.temporary_v_ram_address_register
@@ -498,14 +505,14 @@ impl PrgRam {
                         self.v_ram_address_register
                             .lock()
                             .unwrap()
-                            .set_full_15bits(v);
+                            .set_full_15bits(v)
+                            .unwrap();
                     }
                 }
                 self.first_or_second_write_toggle.lock().unwrap().toggle();
             }
             Self::V_RAM_IO_REGISTER => {
                 let address = self.v_ram_address_register.lock().unwrap().value();
-                println!("address: {:0x}, data: {:0x}", address, data);
                 self.v_ram.lock().unwrap().set(address, data);
                 match ((self.memory[0x2000] >> 2) & 0b00000001) == 1 {
                     true => self.v_ram_address_register.lock().unwrap().increment_y(),

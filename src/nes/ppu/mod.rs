@@ -3,13 +3,11 @@ use std::io::{BufWriter, Write};
 use std::sync::{Arc, Mutex};
 use errors::*;
 use opengl_graphics::{GlGraphics, OpenGL, Texture, TextureSettings};
-use graphics::{Rectangle, Image};
-use graphics::types::Color;
+use graphics::Image;
 use sdl2_window::Sdl2Window;
 use piston::event_loop::*;
 use piston::input::*;
 use piston::window::WindowSettings;
-use piston_window::Key;
 use image::{ImageBuffer, Rgba};
 
 /// [PPU](http://wiki.nesdev.com/w/index.php/PPU) is short for Picture Processing Unit
@@ -51,7 +49,6 @@ impl Ppu {
             if let Some(args) = e.render_args() {
                 let texture = Texture::from_image(&image_buffer, &TextureSettings::new());
                 gl.draw(args.viewport(), |c, g| {
-                    use graphics::clear;
                     image.draw(&texture, &c.draw_state, c.transform, g);
                     for line in -1..((Self::SCAN_LINES_COUNT as i64) - 1) {
                         for cycle in 0..(Self::CLOCKS_PER_LINE) {
@@ -106,11 +103,6 @@ impl Ppu {
         }
     }
     fn color_value(&self, pixel_x: u16, pixel_y: u16) -> NesColor {
-        if (pixel_y >= 110 && pixel_y <= 130) {
-            // println!("x:{}, y:{}, palette: {}, idx: {}", pixel_x, pixel_y, self.palette_num(pixel_x, pixel_y), self.idx_in_palette());
-            // println!("high: {:0b}", self.tile_register_high_lower_value());
-            // println!("low: {:0b}", self.tile_register_low_lower_value());
-        }
         let color_idx: u8 =
             self.get_v_ram_value(VRam::IMAGE_PALETTE + (self.palette_num(pixel_x, pixel_y) as u16 * 4) + self.idx_in_palette() as u16);
         self.v_ram.lock().unwrap().get_color(color_idx)
@@ -127,7 +119,6 @@ impl Ppu {
     }
 
     fn load_tile_registers(&mut self, pixel_x: u16, pixel_y: u16) {
-        // let name_table_idx: u16 = VRam::NAME_TABLE0 + ((pixel_x) / 8) + ((pixel_x / 8) * 32);
         let pattern_table_idx_high: u16 = self.pattern_table_idx_high(pixel_x, pixel_y);
         let pattern_table_idx_low: u16 = self.pattern_table_idx_low(pixel_x, pixel_y);
 
@@ -140,22 +131,10 @@ impl Ppu {
         self.set_tile_register_high_upper(high_upper);
         let low_upper = self.get_v_ram_value(pattern_table_idx_low);
         self.set_tile_register_high_upper(low_upper);
-        if (pixel_y >= 110 && pixel_y <= 130) {
-            // println!(
-            //     "load high: {:0x}, low: {:0x}, idx_high: {:0x}, idx_low: {:0x}",
-            //     high_upper,
-            //     low_upper,
-            //     pattern_table_idx_high,
-            //     pattern_table_idx_low
-            // );
-        }
     }
 
     fn load_attr_value_register(&mut self, pixel_x: u16, pixel_y: u16) {
         let attr_idx = pixel_x / 32 + ((pixel_y / 32) * 8);
-        if (pixel_y >= 110 && pixel_y <= 130) {
-            // println!("v_ram_addr: {:0x}", VRam::ATTR_TABLE0 + attr_idx);
-        }
         self.attr_value_register = self.get_v_ram_value(VRam::ATTR_TABLE0 + attr_idx);
     }
 
@@ -165,15 +144,6 @@ impl Ppu {
 
     fn pattern_table_idx_high(&self, pixel_x: u16, pixel_y: u16) -> u16 {
         let name_table_idx = self.name_table_idx(pixel_x, pixel_y);
-        if (pixel_y >= 110 && pixel_y <= 130) {
-            // println!(
-            //     "x: {}, y: {}, name_table_idx: {:0x}, v: {:0x}",
-            //     pixel_x,
-            //     pixel_y,
-            //     name_table_idx + VRam::NAME_TABLE0,
-            //     self.get_v_ram_value(name_table_idx + VRam::NAME_TABLE0)
-            // );
-        }
         VRam::PATTERN_TABLE0 + ((self.get_v_ram_value(name_table_idx + VRam::NAME_TABLE0) as u16) * 16) + pixel_y % 8
     }
 
@@ -183,9 +153,6 @@ impl Ppu {
 
     /// [Get palette number from attribute table(attr value register)](http://wiki.nesdev.com/w/index.php/PPU_attribute_tables)
     fn palette_num(&self, pixel_x: u16, pixel_y: u16) -> u8 {
-        if (pixel_y >= 110 && pixel_y <= 130) {
-            // println!("attr: {}", self.attr_value_register);
-        }
         match (pixel_x / 16) % 2 {
             0 => {
                 match (pixel_y / 16) % 2 {
@@ -321,37 +288,6 @@ impl VRamAddressRegister {
         self.0
     }
 
-    fn fine_y_scroll(&self) -> u8 {
-        ((self.0 >> 12) & 0b0111) as u8
-    }
-
-    fn name_table(&self) -> u8 {
-        ((self.0 >> 10) & 0b000011) as u8
-    }
-
-    fn coarse_y_scroll(&self) -> u8 {
-        ((self.0 >> 5) & 0b00000011111) as u8
-    }
-
-    fn coarse_x_scroll(&self) -> u8 {
-        (self.0 & 0b0000000000011111) as u8
-    }
-
-    // fn fetch_vram_address(&mut self, vram_offset_flag: bool) -> (u8, u8, u8, u8) {
-    //     let fine_y_scroll = self.y_offset_from_scanline;
-    //     let name_table_num = self.name_table_num;
-    //     let y_panel_pos = self.y_idx;
-    //     let x_panel_pos = self.x_idx;
-    //     if vram_offset_flag {
-    //         self.y_idx += 1;
-    //     } else {
-    //         self.x_idx += 1;
-    //     }
-    //     (fine_y_scroll, name_table_num, y_panel_pos, x_panel_pos)
-    // }
-    // pub fn set_y_offset_from_scanline(&mut self, offset: u8) {
-    //     self.y_offset_from_scanline = offset;
-    // }
     pub fn set_fine_y_scroll(&mut self, value: u8) -> Result<()> {
         match value {
             0...0b111 => {
